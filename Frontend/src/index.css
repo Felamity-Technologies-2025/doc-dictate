@@ -1,0 +1,279 @@
+@import "tailwindcss";
+
+/* RAGSUITE Dark Theme & Typography */
+:root {
+  --rag-bg-darkest: #070a12;
+  --rag-bg-sidebar: #0c1222;
+  --rag-bg-main: #0a0f1d;
+  --rag-card: #131b2e;
+  --rag-card-hover: #17223b;
+  --rag-card-border: #1e2c47;
+  --rag-accent-blue: #2563eb;
+  --rag-accent-blue-hover: #1d4ed8;
+  --rag-text-primary: #f8fafc;
+  --rag-text-muted: #8da0bd;
+  --rag-text-dim: #64748b;
+}
+
+body {
+  background-color: var(--rag-bg-darkest);
+  color: var(--rag-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* Custom sleek dark scrollbar matching RAGSUITE */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0c1222;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #23324d;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334769;
+}
+
+/* RAGSUITE Rich Text Editor Surface */
+.ProseMirror {
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #e2e8f0;
+  min-height: 480px;
+}
+
+.ProseMirror p {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  letter-spacing: -0.01em;
+}
+
+.ProseMirror h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #93c5fd;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.ProseMirror h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-top: 1rem;
+  margin-bottom: 0.35rem;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.ProseMirror li {
+  margin-bottom: 0.25rem;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid #3b82f6;
+  padding: 0.75rem 1rem;
+  margin: 1rem 0;
+  font-style: italic;
+  color: #94a3b8;
+  background-color: #111a2d;
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  width: 100%;
+  table-layout: fixed;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  border: 1px solid #1e2c47;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid #1e2c47;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  color: #cbd5e1;
+}
+
+.ProseMirror th {
+  font-weight: 600;
+  text-align: left;
+  background-color: #162238;
+  color: #f8fafc;
+}
+
+.ProseMirror hr {
+  border: none;
+  border-top: 1px solid #1e2c47;
+  margin: 1.5rem 0;
+}
+
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1rem 0;
+  border: 1px solid #1e2c47;
+}
+
+.ProseMirror a {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: #64748b;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Template fields: static heading/label + editable content area */
+.ProseMirror .template-field {
+  position: relative;
+  margin: 0 0 0.85rem 0;
+  padding: 0.5rem 0.75rem 0.1rem;
+  border: 1px solid transparent;
+  border-left: 2px solid #1e2c47;
+  border-radius: 0.5rem;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.ProseMirror .template-field:hover {
+  border-color: #1e2c47;
+}
+
+.ProseMirror .template-field.is-active-field {
+  border-color: rgba(59, 130, 246, 0.45);
+  border-left-color: #3b82f6;
+  background-color: rgba(37, 99, 235, 0.06);
+}
+
+.ProseMirror .template-field [data-field-label] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: #93c5fd;
+  cursor: text;
+  user-select: none;
+}
+
+.ProseMirror .template-field--section > [data-field-label] {
+  font-size: 15px;
+  color: #e2e8f0;
+}
+
+.ProseMirror .template-field--paragraph > [data-field-label] {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.ProseMirror .template-field__badge {
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0 0.4rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #34d399;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ProseMirror .template-field [data-field-body] > p:last-child {
+  margin-bottom: 0.45rem;
+}
+
+/* "[Enter content here]" while a field is empty */
+.ProseMirror .template-field [data-field-body] > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  content: var(--field-placeholder);
+  color: #475569;
+  font-style: italic;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* ---------- Responsive ---------- */
+
+/* Phones: shorter empty editor so the page fits without scrolling */
+@media (max-width: 639px) {
+  .ProseMirror {
+    min-height: 300px;
+  }
+
+  .ProseMirror td,
+  .ProseMirror th {
+    padding: 6px 8px;
+  }
+}
+
+/* Touch screens: finger-sized toolbar buttons, and 16px text inputs so iOS Safari does not zoom on focus */
+@media (pointer: coarse) {
+  .rag-toolbar button:not([style]) { /* color swatches carry an inline style and keep their size */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+  }
+
+  input[type='text'],
+  input[type='search'],
+  input:not([type]),
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* White "paper" page (Word-like view): dark text on white */
+.paper-page .ProseMirror { color: #111827; }
+.paper-page .ProseMirror blockquote { color: #374151; }
+.paper-page .ProseMirror .template-field { color: #111827; }
+.paper-page .ProseMirror .template-field { border-left-color: #cbd5e1; }
+.paper-page .ProseMirror .template-field:hover { border-color: #cbd5e1; }
+.paper-page .ProseMirror .template-field [data-field-label] { color: #1d4ed8; }
+.paper-page .ProseMirror .template-field--section > [data-field-label] { color: #111827; }
+.paper-page .ProseMirror .template-field--paragraph > [data-field-label] { color: #6b7280; }

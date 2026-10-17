@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+
+**/*.db
+**/*.db-bak*
+**/*.db.bak*
+**/__pycache__/
+**/venv/
+**/.venv/
+**/uploads/
+**/node_modules/
+**/dist/

@@ -1,0 +1,58 @@
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def _load_dotenv(path: Path) -> None:
+    """Load KEY=VALUE pairs from a .env file without overriding real environment variables."""
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding='utf-8').splitlines():
+        line = raw.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        if key.startswith('export '):
+            key = key[len('export '):].strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        elif ' #' in value:
+            value = value.split(' #', 1)[0].rstrip()
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv(BASE_DIR / '.env')
+
+
+class Config:
+    SECRET_KEY = os.getenv('SECRET_KEY', 'word-dictate-dev-secret-key-2026')
+    UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', str(BASE_DIR / 'uploads'))
+    MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 25 * 1024 * 1024))  # 25 MB max
+    ALLOWED_EXTENSIONS = {'wav', 'mp3', 'm4a', 'ogg', 'webm', 'flac', 'aac'}
+    DATABASE_PATH = os.getenv('DATABASE_PATH', str(BASE_DIR / 'documents.db'))
+
+    # Speech Recognition configuration
+    # Supported engines: 'google' (Google Speech API via SpeechRecognition), 'whisper'
+    DEFAULT_SPEECH_ENGINE = os.getenv('DEFAULT_SPEECH_ENGINE', 'google')
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+
+    # CORS
+    CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*').split(',')
+
+    # Document templates (PDF upload + LLM heading extraction)
+    TEMPLATE_PDF_MAX_BYTES = int(os.getenv('TEMPLATE_PDF_MAX_BYTES', 10 * 1024 * 1024))  # 10 MB
+    TEMPLATE_PDF_MAX_PAGES = int(os.getenv('TEMPLATE_PDF_MAX_PAGES', 50))
+    # Pages rendered to images and sent to the vision model when a PDF has no text layer
+    TEMPLATE_OCR_MAX_PAGES = int(os.getenv('TEMPLATE_OCR_MAX_PAGES', 5))
+    # Upper bound on extracted text sent to the LLM
+    LLM_MAX_INPUT_CHARS = int(os.getenv('LLM_MAX_INPUT_CHARS', 40000))
+
+    # Django LLM gateway (credentials are read by djangoLLM_client.py from the environment)
+    # Provider names must match the gateway's spelling (see /api/quota/): OpenAI, Gemini, Amazon Bedrock, Mistral
+    DJANGO_LLM_PROVIDER = os.getenv('DJANGO_LLM_PROVIDER', 'OpenAI')
+    DJANGO_LLM_MODEL = os.getenv('DJANGO_LLM_MODEL', 'gpt-5')
+    DJANGO_LLM_VISION_PROVIDER = os.getenv('DJANGO_LLM_VISION_PROVIDER', '') or DJANGO_LLM_PROVIDER
+    DJANGO_LLM_VISION_MODEL = os.getenv('DJANGO_LLM_VISION_MODEL', '') or DJANGO_LLM_MODEL

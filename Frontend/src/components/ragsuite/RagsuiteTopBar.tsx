@@ -1,0 +1,281 @@
+import React, { useState } from 'react';
+import {
+  Cpu,
+  ChevronDown,
+  FileText,
+  ChevronRight,
+  History,
+  Settings as SettingsIcon,
+  Check,
+  CloudUpload,
+  AlertCircle,
+  Share2,
+  Copy,
+  Download,
+  Plus,
+  LayoutTemplate,
+  FileDown,
+} from 'lucide-react';
+import { DictationSettings, ExportFormat } from '../../types';
+
+interface RagsuiteTopBarProps {
+  documentTitle: string;
+  onUpdateTitle: (title: string) => void;
+  saveStatus: 'saved' | 'saving' | 'unsaved' | 'failed';
+  onManualSave: () => void;
+  onNewDocument?: () => void;
+  dictationSettings: DictationSettings;
+  onOpenDictationSettings: () => void;
+  onOpenDocuments: () => void;
+  onOpenAudioUpload: () => void;
+  onCopyDocumentText: () => void;
+  onDownloadTxt: () => void;
+  onDownloadHtml: () => void;
+  onOpenTemplates: () => void;
+  onExportDocument: (format: ExportFormat) => void;
+}
+
+export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
+  documentTitle,
+  onUpdateTitle,
+  saveStatus,
+  onManualSave,
+  onNewDocument,
+  dictationSettings,
+  onOpenDictationSettings,
+  onOpenDocuments,
+  onOpenAudioUpload,
+  onCopyDocumentText,
+  onDownloadTxt,
+  onDownloadHtml,
+  onOpenTemplates,
+  onExportDocument,
+}) => {
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
+
+  return (
+    <header className="min-h-14 bg-[#0b101e] border-b border-[#19243a] px-2.5 sm:px-4 py-2 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 sm:gap-x-3 gap-y-2 select-none shrink-0 z-30">
+      {/* Left Action Pills (icon-only on small screens) */}
+      <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Select AI Model / Speech Engine Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
+            className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-white rounded-lg px-2 sm:px-3 py-1.5 text-xs font-normal flex items-center gap-1.5 sm:gap-2 cursor-pointer transition-colors shadow-xs"
+            title="Speech-to-Text Engine"
+          >
+            <Cpu className="w-4 h-4 text-blue-400" />
+            <span className="font-medium hidden xl:inline">
+              {dictationSettings.engine === 'browser' ? 'Browser WebSpeech' : 'Flask Backend'}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
+          </button>
+
+          {engineDropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setEngineDropdownOpen(false)} />
+              <div className="absolute top-full left-0 mt-1.5 w-60 max-w-[calc(100vw-1.25rem)] bg-[#121929] border border-[#23334d] rounded-lg shadow-2xl py-1.5 z-40 text-xs text-neutral-200">
+                <div className="px-3 py-1 text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
+                  Speech-to-Text Engines
+                </div>
+                <button
+                  onClick={() => {
+                    onOpenDictationSettings();
+                    setEngineDropdownOpen(false);
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-[#1a2842] flex items-center justify-between"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium text-white">Browser WebSpeech API</span>
+                    <span className="text-[10px] text-neutral-400">Zero latency real-time voice typing</span>
+                  </div>
+                  {dictationSettings.engine === 'browser' && <Check className="w-4 h-4 text-blue-400" />}
+                </button>
+                <button
+                  onClick={() => {
+                    onOpenDictationSettings();
+                    setEngineDropdownOpen(false);
+                  }}
+                  className="w-full px-3 py-2 text-left hover:bg-[#1a2842] flex items-center justify-between"
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium text-white">Python Flask Backend</span>
+                    <span className="text-[10px] text-neutral-400">Google / Whisper audio API</span>
+                  </div>
+                  {dictationSettings.engine === 'flask' && <Check className="w-4 h-4 text-blue-400" />}
+                </button>
+                <div className="border-t border-[#1e2c47] my-1" />
+                <button
+                  onClick={() => {
+                    onOpenDictationSettings();
+                    setEngineDropdownOpen(false);
+                  }}
+                  className="w-full px-3 py-1.5 text-left text-blue-400 hover:bg-[#1a2842] text-[11px]"
+                >
+                  Engine & Language Settings...
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* New Document Button */}
+        {onNewDocument && (
+          <button
+            onClick={onNewDocument}
+            className="bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            title="Create New Document (Ctrl+N)"
+          >
+            <Plus className="w-4 h-4 md:w-3.5 md:h-3.5" />
+            <span className="hidden md:inline">New Document</span>
+          </button>
+        )}
+
+        {/* File Viewer > Pill */}
+        <button
+          onClick={onOpenDocuments}
+          className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-neutral-200 hover:text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-normal flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
+          title="File Viewer"
+        >
+          <FileText className="w-4 h-4 text-neutral-400" />
+          <span className="hidden lg:inline">File Viewer</span>
+          <ChevronRight className="w-3.5 h-3.5 text-neutral-400 hidden lg:block" />
+        </button>
+
+        {/* Reusable PDF Templates */}
+        <button
+          onClick={onOpenTemplates}
+          className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-neutral-200 hover:text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-normal flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
+          title="Upload PDF templates and create documents from them"
+        >
+          <LayoutTemplate className="w-4 h-4 text-blue-400" />
+          <span className="hidden lg:inline">Templates</span>
+        </button>
+      </div>
+
+      {/* Document Title: its own full-width row on phones, fills the middle from sm up */}
+      <div className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 flex items-center gap-2">
+        <input
+          type="text"
+          value={documentTitle}
+          onChange={(e) => onUpdateTitle(e.target.value)}
+          className="bg-[#121929] hover:bg-[#162035] focus:bg-[#162035] border border-transparent focus:border-[#2b3c5a] rounded-lg px-2.5 py-1 text-xs font-medium text-white focus:outline-none flex-1 sm:flex-none w-full sm:w-52 min-w-0 transition-colors truncate"
+          title="Click to rename document"
+        />
+
+        {/* Save Status Badge */}
+        <div className="flex items-center gap-1.5 text-[11px] shrink-0">
+          {saveStatus === 'saved' && (
+            <span className="flex items-center gap-1 text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2 py-0.5 rounded-full text-[10px]">
+              <Check className="w-3 h-3" />
+              <span className="hidden md:inline">Saved</span>
+            </span>
+          )}
+          {saveStatus === 'saving' && (
+            <span className="flex items-center gap-1 text-blue-400 bg-blue-950/40 border border-blue-800/40 px-2 py-0.5 rounded-full text-[10px] animate-pulse">
+              <CloudUpload className="w-3 h-3" />
+              <span className="hidden md:inline">Saving...</span>
+            </span>
+          )}
+          {saveStatus === 'unsaved' && (
+            <span className="flex items-center gap-1 text-amber-400 bg-amber-950/40 border border-amber-800/40 px-2 py-0.5 rounded-full text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+              <span className="hidden md:inline">Unsaved</span>
+            </span>
+          )}
+          {saveStatus === 'failed' && (
+            <span className="flex items-center gap-1 text-red-400 bg-red-950/40 border border-red-800/40 px-2 py-0.5 rounded-full text-[10px]">
+              <AlertCircle className="w-3 h-3" />
+              <span className="hidden md:inline">Save error</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Right Action Buttons */}
+      <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
+        {/* History / Clock Icon */}
+        <button
+          onClick={onOpenDocuments}
+          className="p-2 text-[#8da0bd] hover:text-white hover:bg-[#162035] rounded-lg transition-colors cursor-pointer"
+          title="Document History (SQLite)"
+        >
+          <History className="w-4 h-4" />
+        </button>
+
+        {/* Settings Gear Icon */}
+        <button
+          onClick={onOpenDictationSettings}
+          className="p-2 text-[#8da0bd] hover:text-white hover:bg-[#162035] rounded-lg transition-colors cursor-pointer"
+          title="Settings & Dictation Configuration"
+        >
+          <SettingsIcon className="w-4 h-4" />
+        </button>
+
+        {/* Share / Export Menu */}
+        <div className="relative">
+          <button
+            onClick={() => setShareMenuOpen(!shareMenuOpen)}
+            className="p-2 text-[#8da0bd] hover:text-white hover:bg-[#162035] rounded-lg transition-colors cursor-pointer"
+            title="Export Document"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+
+          {shareMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setShareMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#121929] border border-[#23334d] text-neutral-200 rounded-lg shadow-2xl py-1.5 z-40 text-xs">
+                <button
+                  onClick={() => {
+                    onCopyDocumentText();
+                    setShareMenuOpen(false);
+                  }}
+                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
+                >
+                  <Copy className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Copy Document Text</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onDownloadTxt();
+                    setShareMenuOpen(false);
+                  }}
+                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
+                >
+                  <Download className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Export Plain Text (.txt)</span>
+                </button>
+                <button
+                  onClick={() => {
+                    onDownloadHtml();
+                    setShareMenuOpen(false);
+                  }}
+                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
+                >
+                  <Download className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Export Web Page (.html)</span>
+                </button>
+                <div className="border-t border-[#1e2c47] my-1" />
+                {(['docx', 'pdf'] as ExportFormat[]).map((format) => (
+                  <button
+                    key={format}
+                    onClick={() => {
+                      onExportDocument(format);
+                      setShareMenuOpen(false);
+                    }}
+                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
+                  >
+                    <FileDown className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Download as {format.toUpperCase()} (.{format})</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+};
