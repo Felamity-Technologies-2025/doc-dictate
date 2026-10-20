@@ -235,7 +235,9 @@ class _BlockBuilder:
                     self.blocks.append(Block('quote' if in_quote else 'paragraph', [Run(child.strip())]))
                 continue
             tag = child.tag
-            if 'data-template-field' in child.attrs:
+            if 'data-template-table' in child.attrs:
+                self._template_table(child, list_depth, in_quote)
+            elif 'data-template-field' in child.attrs:
                 self._template_field(child, list_depth, in_quote)
             elif tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
                 level = min(int(tag[1]) + heading_offset, 6)
@@ -322,6 +324,50 @@ class _BlockBuilder:
                 else:
                     yield from self._iter_tags(child, tag)
 
+    def _template_table(self, node, list_depth, in_quote):
+        """Column headings of a table-shaped template: header row of labels, one row of content cells."""
+        header, values, extra_rows = [], [], []
+
+        def cell_runs(container) -> List[Run]:
+            start = len(self.blocks)
+            self.walk(container, list_depth, in_quote)
+            cell_blocks = self.blocks[start:]
+            del self.blocks[start:]
+            runs: List[Run] = []
+            for block in cell_blocks:
+                if not _has_text(block.runs):
+                    continue
+                if runs:
+                    runs.append(Run('', is_break=True))
+                runs.extend(block.runs)
+            return runs
+
+        for column in node.children:
+            if isinstance(column, Node) and 'data-template-table-row' in column.attrs:
+                extra_rows.append([cell_runs(cell) for cell in column.children
+                                   if isinstance(cell, Node) and 'data-template-table-cell' in cell.attrs])
+                continue
+            if not isinstance(column, Node) or 'data-template-field' not in column.attrs:
+                continue
+            body = column.find_child(lambda n: 'data-field-body' in n.attrs) or column
+            start = len(self.blocks)
+            self.walk(body, list_depth, in_quote)
+            cell_blocks = self.blocks[start:]
+            del self.blocks[start:]
+            runs: List[Run] = []
+            for block in cell_blocks:
+                if not _has_text(block.runs):
+                    continue
+                if runs:
+                    runs.append(Run('', is_break=True))
+                runs.extend(block.runs)
+            header.append([Run(column.attrs.get('data-heading', '').strip().rstrip(':'), bold=True)])
+            values.append(runs)
+        if header:
+            width = len(header)
+            rows = [header, values] + [(row + [[] for _ in range(width)])[:width] for row in extra_rows]
+            self.blocks.append(Block('table', rows=rows, header_rows={0}))
+
     def _template_field(self, node, list_depth, in_quote):
         heading = node.attrs.get('data-heading', '').strip()
         field_type = node.attrs.get('data-field-type', 'field')
@@ -329,11 +375,18 @@ class _BlockBuilder:
             level = max(1, min(int(node.attrs.get('data-level') or 1), 6))
         except ValueError:
             level = 1
+        align = node.attrs.get('data-align')
+        align = align if align in ('center', 'right') else None
         body = node.find_child(lambda n: 'data-field-body' in n.attrs) or node
         start = len(self.blocks)
         self.walk(body, list_depth, in_quote)
         body_blocks = [b for b in self.blocks[start:]]
         del self.blocks[start:]
+        if align and field_type != 'paragraph':
+            # The field's placement applies to its text unless a paragraph was aligned explicitly
+            for b in body_blocks:
+                if b.kind == 'paragraph' and not b.align:
+                    b.align = align
         # Ignore empty paragraphs that only exist as editable placeholders
         while body_blocks and body_blocks[-1].kind == 'paragraph' and not _has_text(body_blocks[-1].runs):
             body_blocks.pop()
@@ -347,13 +400,13 @@ class _BlockBuilder:
             if body_blocks and body_blocks[0].kind == 'paragraph':
                 first = body_blocks.pop(0)
                 runs = [label, Run(' ')] + first.runs if _has_text(first.runs) else [label]
-                self.blocks.append(Block('label', runs, level=level, align=first.align))
+                self.blocks.append(Block('label', runs, level=level, align=first.align or align))
             else:
-                self.blocks.append(Block('label', [label], level=level))
+                self.blocks.append(Block('label', [label], level=level, align=align))
             self.blocks.extend(body_blocks)
             return
         # section
-        self.blocks.append(Block('section', [Run(heading, bold=True)], level=level))
+        self.blocks.append(Block('section', [Run(heading, bold=True)], level=level, align=align))
         self.blocks.extend(body_blocks)
 
 
@@ -581,6 +634,8 @@ def blocks_to_html(blocks: List[Block]) -> str:
         elif block.kind == 'section':
             css = 'section' if block.level == 1 else 'section2'
             indent = f' style="margin-left:{(block.level - 1) * 12}pt"' if block.level > 1 else ''
+            if block.align:
+                indent = f' style="{indent[8:-1] + ";" if indent else ""}text-align:{block.align}"'
             parts.append(f'<p class="{css}"{indent}>{_runs_to_html(block.runs)}</p>')
         elif block.kind == 'label':
             parts.append(f'<p class="label"{align}>{_runs_to_html(block.runs)}</p>')

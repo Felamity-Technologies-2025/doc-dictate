@@ -10,6 +10,7 @@ import {
   Maximize2,
   Minimize2,
   Layers,
+  Eye,
 } from 'lucide-react';
 import { PageLayoutConfig } from '../../types';
 
@@ -21,6 +22,7 @@ interface RagsuiteEditorCardProps {
   layout: PageLayoutConfig;
   onClearDocument: () => void;
   onCopyText: () => void;
+  onPreview: () => void;
 }
 
 export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
@@ -31,6 +33,7 @@ export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
   layout,
   onClearDocument,
   onCopyText,
+  onPreview,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isPrintLayout, setIsPrintLayout] = useState(true);
@@ -76,6 +79,16 @@ export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
             >
               <Layers className="w-3.5 h-3.5" />
               <span className="hidden md:inline">{isPrintLayout ? 'Print View' : 'Dark Mode'}</span>
+            </button>
+
+            {/* Preview the document as it will be downloaded (tables included) */}
+            <button
+              onClick={onPreview}
+              className="px-2 py-1 rounded-md text-[11px] font-medium text-[#8da0bd] hover:text-white hover:bg-[#18233a] transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Preview the document structure before downloading"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Preview</span>
             </button>
 
             {/* Copy Button */}

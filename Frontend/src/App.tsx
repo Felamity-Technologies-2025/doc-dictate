@@ -16,6 +16,9 @@ import type { JSONContent } from '@tiptap/core';
 import { FontStyle, LineHeight, Subscript, Superscript } from './utils/editorExtensions';
 import {
   TemplateFieldNode,
+  TemplateTableNode,
+  TemplateTableRowNode,
+  TemplateTableCellNode,
   buildTemplateDocument,
   clearTemplateFields,
   documentMatchesTemplate,
@@ -35,6 +38,7 @@ import { DictationOverlayBadge } from './components/dictation/DictationOverlayBa
 import { DictationSettingsModal } from './components/dictation/DictationSettingsModal';
 import { AudioFileUploadModal } from './components/dictation/AudioFileUploadModal';
 import { DocumentsModal } from './components/layout/DocumentsModal';
+import { PreviewModal } from './components/editor/PreviewModal';
 import { TableDialog } from './components/editor/TableDialog';
 import { FindReplaceModal } from './components/editor/FindReplaceModal';
 import { TemplatesModal } from './components/templates/TemplatesModal';
@@ -67,6 +71,7 @@ export default function App() {
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
   const [isTableDialogOpen, setIsTableDialogOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
   const [fieldsModal, setFieldsModal] = useState<{ open: boolean; focusAdd: boolean }>({
@@ -126,6 +131,9 @@ export default function App() {
       Image.configure({
         inline: true,
       }),
+      TemplateTableNode,
+      TemplateTableRowNode,
+      TemplateTableCellNode,
       TemplateFieldNode,
     ],
     content: '<p></p>',
@@ -513,6 +521,7 @@ export default function App() {
             layout={layout}
             onClearDocument={handleClearDocument}
             onCopyText={handleCopyDocumentText}
+            onPreview={() => setIsPreviewOpen(true)}
           />
         </div>
 
@@ -565,6 +574,13 @@ export default function App() {
         onSelectDocument={handleSelectDocument}
         onNewDocument={handleNewDocument}
         currentDocumentId={documentId}
+      />
+
+      <PreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        getContent={() => editor?.getHTML() ?? ''}
+        title={documentTitle}
       />
 
       <TableDialog

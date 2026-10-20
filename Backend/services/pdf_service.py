@@ -38,6 +38,22 @@ def is_pdf_bytes(data: bytes) -> bool:
     return b'%PDF-' in data[:1024]
 
 
+def _table_hint(page) -> str:
+    """Describe ruled tables on a text page (header row first) so the LLM can tell column headers from lines."""
+    try:
+        lines = []
+        for table in page.find_tables().tables:
+            rows = table.extract()
+            header = [' '.join((cell or '').split()) for cell in (rows[0] if rows else [])]
+            if len([h for h in header if h]) >= 2:
+                lines.append('  header row: ' + ' | '.join(header))
+        if lines:
+            return '\n[Tables detected on this page]\n' + '\n'.join(lines)
+    except Exception:
+        logger.debug("Table detection failed", exc_info=True)
+    return ''
+
+
 def read_pdf(data: bytes, max_pages: int) -> PdfContent:
     """Extract per-page text in reading order and detect scanned pages."""
     if not is_pdf_bytes(data):
@@ -66,6 +82,7 @@ def read_pdf(data: bytes, max_pages: int) -> PdfContent:
                 logger.warning("Text extraction failed on page %s", index + 1, exc_info=True)
                 text = ''
             if len(text) >= MIN_TEXT_CHARS_PER_PAGE:
+                text += _table_hint(page)
                 parts.append(f'--- Page {index + 1} ---\n{text}')
                 content.text_page_count += 1
             else:

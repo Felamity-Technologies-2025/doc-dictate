@@ -83,6 +83,10 @@ export interface TemplateField {
   parent_field_id: string | null;
   level: number;
   is_custom: boolean;
+  /** Fields sharing a table_id are the column headings of one table in the source document */
+  table_id?: string | null;
+  /** Placement of the heading on the source page; absent/null = left */
+  align?: 'left' | 'center' | 'right' | null;
   created_at: string;
   updated_at: string;
 }

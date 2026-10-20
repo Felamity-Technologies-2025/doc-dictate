@@ -26,6 +26,7 @@ from services.document_service import document_service  # noqa: F401
 logger = logging.getLogger(__name__)
 
 FIELD_TYPES = ('field', 'section', 'paragraph')
+ALIGNMENTS = ('left', 'center', 'right')
 MAX_HEADING_LENGTH = 200
 MAX_TEMPLATE_NAME_LENGTH = 120
 MAX_LEVEL = 6
@@ -113,6 +114,13 @@ class TemplateService:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_template_fields_template ON template_fields(template_id, field_order)"
             )
+            # Fields sharing a table_id are the column headings of one table in the source document
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(template_fields)")}
+            if 'table_id' not in columns:
+                conn.execute("ALTER TABLE template_fields ADD COLUMN table_id TEXT")
+            # Horizontal placement of the heading in the source document (NULL = left)
+            if 'align' not in columns:
+                conn.execute("ALTER TABLE template_fields ADD COLUMN align TEXT")
             conn.commit()
 
     # ------------------------------------------------------------------ helpers
@@ -143,6 +151,8 @@ class TemplateService:
                 'parent_field_id': row['parent_field_id'],
                 'level': level,
                 'is_custom': bool(row['is_custom']),
+                'table_id': row['table_id'],
+                'align': row['align'],
                 'created_at': row['created_at'],
                 'updated_at': row['updated_at'],
             })
@@ -202,7 +212,8 @@ class TemplateService:
                         document_type: str = None, extraction_method: str = None) -> Dict:
         """
         Persist a template and its extracted fields in one transaction.
-        `fields` items: {heading, field_type, parent_index (index into `fields` or None)}.
+        `fields` items: {heading, field_type, parent_index (index into `fields` or None),
+        table_key (optional: fields with the same key are the columns of one table)}.
         """
         name = clean_template_name(template_name)
         if not fields:
@@ -211,6 +222,7 @@ class TemplateService:
         template_id = str(uuid.uuid4())
         now = _now()
         field_ids = [str(uuid.uuid4()) for _ in fields]
+        table_ids: Dict = {}
         conn = self._get_connection()
         try:
             with conn:  # one transaction: all-or-nothing
@@ -227,12 +239,16 @@ class TemplateService:
                         if isinstance(parent_index, int) and 0 <= parent_index < index
                         else None
                     )
+                    table_key = field.get('table_key')
+                    table_id = table_ids.setdefault(table_key, str(uuid.uuid4())) if table_key is not None else None
                     conn.execute(
                         """INSERT INTO template_fields (id, template_id, heading, field_type, field_order,
-                                                        parent_field_id, is_custom, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                                                        parent_field_id, is_custom, created_at, updated_at, table_id,
+                                                        align)
+                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
                         (field_ids[index], template_id, clean_heading(field['heading']),
-                         clean_field_type(field.get('field_type'), 'section'), index + 1, parent_id, now, now),
+                         clean_field_type(field.get('field_type'), 'section'), index + 1, parent_id, now, now,
+                         table_id, field.get('align') if field.get('align') in ALIGNMENTS else None),
                     )
         finally:
             conn.close()
@@ -334,12 +350,19 @@ class TemplateService:
                 else:
                     insert_at = len(ids)
 
+                # A field added between two columns of a table becomes a column of that table
+                table_id = None
+                if 0 < insert_at < len(rows):
+                    before, after = rows[insert_at - 1]['table_id'], rows[insert_at]['table_id']
+                    if before and before == after:
+                        table_id = before
+
                 conn.execute(
                     """INSERT INTO template_fields (id, template_id, heading, field_type, field_order,
-                                                    parent_field_id, is_custom, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                                    parent_field_id, is_custom, created_at, updated_at, table_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (new_id, template_id, heading, field_type, len(ids) + 1, parent_field_id,
-                     1 if is_custom else 0, now, now),
+                     1 if is_custom else 0, now, now, table_id),
                 )
                 ids.insert(insert_at, new_id)
                 self._renumber(conn, template_id, ids, now)

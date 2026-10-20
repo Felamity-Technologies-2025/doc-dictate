@@ -45,10 +45,12 @@ Rules:
    - "paragraph": an unlabelled free-text region (e.g. "Body").
 7. Hierarchy: level 1 = top level; sub-headings nested under a heading get level 2, 3, ... and parent_order = the "order" of their enclosing heading (null for top level).
 8. template_name: a short generic name for this kind of document (e.g. "Leave Letter", "Legal Opinion"). It must not contain any names, places or dates from the document.
-9. Respond with a single valid JSON object and nothing else - no Markdown, no code fences, no commentary.
+9. Tables: when headings are the column headers of a table (a ruled or aligned grid whose header row is followed by rows of values, e.g. "Sl.No. | Date | Description | Remarks"), output each column header as its own entry (field_type "field"), in left-to-right order, directly after the heading that introduces the table, and give all columns of that table the same integer "table" id (1 for the first table in the document, 2 for the next, ...). Rule lines made of "=" or "-" are not headings. Headings that are not table column headers, and single-column layouts, get "table": null. A table has at least two columns. Never put the cell values of the table rows in the output.
+10. Placement: for each heading give "align", the horizontal position of that heading/label (and its value) on the page: "right" when it sits against the right margin (e.g. a date or signature line such as "Advocate"), "center" when it is centred on the page (e.g. a title like "TO WHOMSOEVER IT MAY CONCERN"), otherwise "left". Judge this from where the text actually is on the page, not from habit.
+11. Respond with a single valid JSON object and nothing else - no Markdown, no code fences, no commentary.
 
 JSON schema:
-{"template_name": string, "document_type": string, "fields": [{"heading": string, "field_type": "field" | "section" | "paragraph", "order": integer starting at 1, "level": integer >= 1, "parent_order": integer | null}]}"""
+{"template_name": string, "document_type": string, "fields": [{"heading": string, "field_type": "field" | "section" | "paragraph", "order": integer starting at 1, "level": integer >= 1, "parent_order": integer | null, "table": integer | null, "align": "left" | "center" | "right"}]}"""
 
 
 class ExtractionError(Exception):
@@ -179,7 +181,7 @@ def clean_extracted_heading(raw) -> Optional[str]:
 
 
 def normalize_extraction(data: Dict) -> Dict:
-    """Validate the LLM JSON and convert it to {template_name, document_type, fields[{heading, field_type, parent_index}]}."""
+    """Validate the LLM JSON and convert it to {template_name, document_type, fields[{heading, field_type, parent_index, table_key}]}."""
     raw_fields = data.get('fields')
     if not isinstance(raw_fields, list):
         raise ExtractionError('The LLM response did not contain a list of fields.', 502)
@@ -201,6 +203,8 @@ def normalize_extraction(data: Dict) -> Dict:
             'position': position,
             'level': min(max(level or 1, 1), 6),
             'parent_order': _as_int(raw.get('parent_order')),
+            'table': _as_int(raw.get('table')),
+            'align': str(raw.get('align') or '').strip().lower(),
         })
 
     items.sort(key=lambda item: (item['order'], item['position']))
@@ -217,6 +221,21 @@ def normalize_extraction(data: Dict) -> Dict:
     if not items:
         raise ExtractionError('No headings or field labels could be identified in this document.', 422)
 
+    # Table columns: consecutive entries sharing a table id form one table. A table needs two or
+    # more columns, so a lone entry (or a non-contiguous reuse of an id) is an ordinary field.
+    runs, run = [], []
+    for item in items:
+        if run and item['table'] is not None and item['table'] == run[-1]['table']:
+            run.append(item)
+            continue
+        runs.append(run)
+        run = [item]
+    runs.append(run)
+    for index, run in enumerate(r for r in runs if r):
+        in_table = run[0]['table'] is not None and len(run) >= 2
+        for item in run:
+            item['table_key'] = index if in_table else None
+
     # Resolve hierarchy: explicit parent_order first, else nearest earlier field with a lower level
     order_to_index = {}
     fields = []
@@ -230,7 +249,9 @@ def normalize_extraction(data: Dict) -> Dict:
                     parent_index = back
                     break
         order_to_index.setdefault(item['order'], index)
-        fields.append({'heading': item['heading'], 'field_type': item['field_type'], 'parent_index': parent_index})
+        fields.append({'heading': item['heading'], 'field_type': item['field_type'], 'parent_index': parent_index,
+                       'table_key': item.get('table_key'),
+                       'align': item['align'] if item['align'] in ('center', 'right') else None})
 
     name = data.get('template_name')
     name = ' '.join(name.split())[:120] if isinstance(name, str) and name.strip() else ''

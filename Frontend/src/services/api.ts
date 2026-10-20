@@ -163,6 +163,19 @@ export class ApiService {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  /** Render the given editor HTML as the PDF the export would produce (nothing is saved) */
+  static async previewDocument(content: string, title: string): Promise<Blob> {
+    const response = await fetch(`${API_BASE}/api/documents/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, title }),
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response, `Preview failed (HTTP ${response.status})`));
+    }
+    return response.blob();
+  }
+
   // ---------------------------------------------------------------------------
   // Templates
   // ---------------------------------------------------------------------------

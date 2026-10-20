@@ -277,3 +277,95 @@ body {
 .paper-page .ProseMirror .template-field [data-field-label] { color: #1d4ed8; }
 .paper-page .ProseMirror .template-field--section > [data-field-label] { color: #111827; }
 .paper-page .ProseMirror .template-field--paragraph > [data-field-label] { color: #6b7280; }
+
+/* Table-shaped template headings: label = header, content area below it; added rows follow */
+.ProseMirror .template-table-wrap { margin: 0 0 0.85rem 0; }
+
+.ProseMirror .template-table {
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #2b3c5a;
+}
+
+.ProseMirror .template-table > .template-field {
+  display: table-cell;
+  margin: 0 !important;
+  padding: 0;
+  border: 1px solid #2b3c5a;
+  border-radius: 0;
+  vertical-align: top;
+}
+
+.ProseMirror .template-table > .template-field:hover { border-color: #2b3c5a; }
+
+.ProseMirror .template-table > .template-field.is-active-field {
+  border-color: #3b82f6;
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.55);
+}
+
+.ProseMirror .template-table > .template-field > [data-field-label] {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  min-width: 0;
+  background-color: #162035;
+  border-bottom: 1px solid #2b3c5a;
+}
+
+.ProseMirror .template-table > .template-field > [data-field-body] {
+  padding: 0.4rem 0.6rem 0;
+  overflow-wrap: anywhere;
+}
+
+.ProseMirror .template-table-row { display: table-row; }
+
+.ProseMirror .template-table-cell {
+  display: table-cell;
+  padding: 0.4rem 0.6rem 0;
+  border: 1px solid #2b3c5a;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.ProseMirror .template-table-cell > p:last-child { margin-bottom: 0.45rem; }
+
+.ProseMirror .template-table__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-top: 0.35rem;
+  padding: 0;
+  border: 1px solid #2b3c5a;
+  border-radius: 9999px;
+  background: #162035;
+  color: #93c5fd;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ProseMirror .template-table__add:hover { background: #1d2f52; color: #fff; }
+
+.paper-page .ProseMirror .template-table,
+.paper-page .ProseMirror .template-table > .template-field,
+.paper-page .ProseMirror .template-table > .template-field > [data-field-label],
+.paper-page .ProseMirror .template-table-cell { border-color: #9ca3af; }
+.paper-page .ProseMirror .template-table > .template-field > [data-field-label] { background-color: #f1f5f9; color: #111827; }
+.paper-page .ProseMirror .template-table > .template-field:hover { border-color: #9ca3af; }
+.paper-page .ProseMirror .template-table__add { border-color: #9ca3af; background: #f1f5f9; color: #1d4ed8; }
+.paper-page .ProseMirror .template-table__add:hover { background: #dbeafe; }
+
+/* Heading placement taken from the source document (right / centre); left is the default */
+.ProseMirror .template-field[data-align="center"] { text-align: center; }
+.ProseMirror .template-field[data-align="right"] { text-align: right; }
+.ProseMirror .template-field[data-align="center"] > [data-field-label] { justify-content: center; }
+.ProseMirror .template-field[data-align="right"] > [data-field-label] { justify-content: flex-end; }
+.ProseMirror .template-field[data-align="center"] [data-field-body] > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before,
+.ProseMirror .template-field[data-align="right"] [data-field-body] > p:only-child:has(> br.ProseMirror-trailingBreak:only-child)::before {
+  float: none;
+  height: auto;
+}

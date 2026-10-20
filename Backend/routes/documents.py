@@ -134,3 +134,21 @@ def export_document_file(document_id):
         as_attachment=True,
         download_name=export_filename(doc.get('title'), fmt),
     )
+
+
+@documents_bp.route('/preview', methods=['POST'])
+def preview_document():
+    """Render editor HTML to PDF without saving, so the user can check the layout (tables included)."""
+    data = request.get_json(silent=True) or {}
+    content = data.get('content', '')
+    title = data.get('title') or 'Document'
+    if not isinstance(content, str) or not isinstance(title, str):
+        return jsonify({'success': False, 'error': '"content" and "title" must be strings.'}), 400
+    try:
+        pdf = export_document(content, title, 'pdf')
+    except ExportError as e:
+        return jsonify({'success': False, 'error': str(e)}), 422
+    except Exception as e:
+        logger.error(f"Error rendering document preview: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': 'The preview could not be generated.'}), 500
+    return send_file(io.BytesIO(pdf), mimetype='application/pdf', as_attachment=False)
