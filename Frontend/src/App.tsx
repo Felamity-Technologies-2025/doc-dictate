@@ -32,7 +32,6 @@ import {
 import { RagsuiteTopBar } from './components/ragsuite/RagsuiteTopBar';
 import { RagsuiteToolbar } from './components/ragsuite/RagsuiteToolbar';
 import { RagsuiteEditorCard } from './components/ragsuite/RagsuiteEditorCard';
-import { RagsuiteBottomInput } from './components/ragsuite/RagsuiteBottomInput';
 
 import { DictationOverlayBadge } from './components/dictation/DictationOverlayBadge';
 import { DictationSettingsModal } from './components/dictation/DictationSettingsModal';
@@ -525,20 +524,6 @@ export default function App() {
           />
         </div>
 
-        {/* 4. RAGSUITE Bottom Input & Voice Prompt Bar */}
-        <RagsuiteBottomInput
-          onInsertText={(text) => {
-            if (editor) editor.commands.insertContent(`${text} `);
-          }}
-          dictationStatus={dictationStatus}
-          interimText={interimText}
-          onToggleDictation={toggleDictation}
-          onOpenQuickMenu={() => setIsTableDialogOpen(true)}
-          wordCount={wordCount}
-          charCount={charCount}
-          engine={dictationSettings.engine}
-          language={dictationSettings.language}
-        />
       </main>
 
       {/* Floating Waveform & Interim Speech Overlay Badge */}

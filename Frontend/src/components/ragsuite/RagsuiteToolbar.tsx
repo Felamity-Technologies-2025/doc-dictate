@@ -239,6 +239,8 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
   onOpenFindReplace,
 }) => {
   const [lineSpacingOpen, setLineSpacingOpen] = useState(false);
+  const [alignmentOpen, setAlignmentOpen] = useState(false);
+  const [listTypeOpen, setListTypeOpen] = useState(false);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const [highlightPickerOpen, setHighlightPickerOpen] = useState(false);
   const [dictateDropdownOpen, setDictateDropdownOpen] = useState(false);
@@ -270,6 +272,20 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
     editor.getAttributes('paragraph').lineHeight ||
     editor.getAttributes('heading').lineHeight ||
     '';
+  const textAlignments = [
+    { value: 'left' as const, label: 'Align left', Icon: AlignLeft },
+    { value: 'center' as const, label: 'Align center', Icon: AlignCenter },
+    { value: 'right' as const, label: 'Align right', Icon: AlignRight },
+    { value: 'justify' as const, label: 'Justify', Icon: AlignJustify },
+  ];
+  const currentTextAlignment =
+    textAlignments.find(({ value }) => editor.isActive({ textAlign: value })) ??
+    textAlignments[0];
+  const listTypes = [
+    { value: 'bulletList', label: 'Bulleted list', Icon: List },
+    { value: 'orderedList', label: 'Numbered list', Icon: ListOrdered },
+  ];
+  const currentListType = listTypes.find(({ value }) => editor.isActive(value));
 
   const handleFontFamilyChange = (val: string) => {
     if (val) editor.chain().focus().setFontFamily(val).run();
@@ -596,80 +612,122 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
           {/* Separator */}
           <div className="w-[1px] h-5 bg-[#1e2c47] mx-0.5" />
 
-          {/* Alignments */}
-          <button
-            onClick={() => editor.chain().focus().setTextAlign('left').run()}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              editor.isActive({ textAlign: 'left' })
-                ? 'bg-blue-600 text-white'
-                : 'hover:bg-[#1a2842] text-neutral-300 hover:text-white'
-            }`}
-            title="Align Left"
-          >
-            <AlignLeft className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={() => editor.chain().focus().setTextAlign('center').run()}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              editor.isActive({ textAlign: 'center' })
-                ? 'bg-blue-600 text-white'
-                : 'hover:bg-[#1a2842] text-neutral-300 hover:text-white'
-            }`}
-            title="Align Center"
-          >
-            <AlignCenter className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={() => editor.chain().focus().setTextAlign('right').run()}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              editor.isActive({ textAlign: 'right' })
-                ? 'bg-blue-600 text-white'
-                : 'hover:bg-[#1a2842] text-neutral-300 hover:text-white'
-            }`}
-            title="Align Right"
-          >
-            <AlignRight className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              editor.isActive({ textAlign: 'justify' })
-                ? 'bg-blue-600 text-white'
-                : 'hover:bg-[#1a2842] text-neutral-300 hover:text-white'
-            }`}
-            title="Justify"
-          >
-            <AlignJustify className="w-3.5 h-3.5" />
-          </button>
+          {/* Text alignment */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setAlignmentOpen(!alignmentOpen)}
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-0.5 ${
+                alignmentOpen
+                  ? 'bg-[#1a2842] text-white'
+                  : 'text-neutral-300 hover:bg-[#1a2842] hover:text-white'
+              }`}
+              title={`Text alignment: ${currentTextAlignment.label}`}
+              aria-label={`Text alignment: ${currentTextAlignment.label}`}
+              aria-haspopup="menu"
+              aria-expanded={alignmentOpen}
+            >
+              <currentTextAlignment.Icon className="w-3.5 h-3.5" />
+              <ChevronDown className="w-2.5 h-2.5 text-neutral-500" />
+            </button>
+            {alignmentOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setAlignmentOpen(false)} />
+                <div
+                  role="menu"
+                  aria-label="Text alignment"
+                  className={`absolute top-full left-0 mt-1.5 w-40 bg-[#121929] border border-[#23334d] rounded-lg shadow-2xl py-1 z-40 ${MOBILE_POPOVER}`}
+                >
+                  {textAlignments.map(({ value, label, Icon }) => {
+                    const isSelected = currentTextAlignment.value === value;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={isSelected}
+                        onClick={() => {
+                          editor.chain().focus().setTextAlign(value).run();
+                          setAlignmentOpen(false);
+                        }}
+                        className={`w-full px-3 py-1.5 text-left hover:bg-[#1a2842] flex items-center gap-2 ${
+                          isSelected ? 'text-blue-400' : 'text-neutral-300'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="flex-1">{label}</span>
+                        {isSelected && <Check className="w-3 h-3" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Lists & Indents */}
-        <button
-          onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-            editor.isActive('bulletList')
-              ? 'bg-blue-600 text-white'
-              : 'hover:bg-[#1a2842] text-neutral-300 hover:text-white'
-          }`}
-          title="Bulleted List"
-        >
-          <List className="w-3.5 h-3.5" />
-        </button>
-
-        <button
-          onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-            editor.isActive('orderedList')
-              ? 'bg-blue-600 text-white'
-              : 'hover:bg-[#1a2842] text-neutral-300 hover:text-white'
-          }`}
-          title="Numbered List"
-        >
-          <ListOrdered className="w-3.5 h-3.5" />
-        </button>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setListTypeOpen(!listTypeOpen)}
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-0.5 ${
+              listTypeOpen
+                ? 'bg-[#1a2842] text-white'
+                : currentListType
+                ? 'bg-blue-600 text-white'
+                : 'text-neutral-300 hover:bg-[#1a2842] hover:text-white'
+            }`}
+            title={`List type: ${currentListType?.label ?? 'Bulleted list'}`}
+            aria-label={`List type: ${currentListType?.label ?? 'Bulleted list'}`}
+            aria-haspopup="menu"
+            aria-expanded={listTypeOpen}
+          >
+            {currentListType ? (
+              <currentListType.Icon className="w-3.5 h-3.5" />
+            ) : (
+              <List className="w-3.5 h-3.5" />
+            )}
+            <ChevronDown className="w-2.5 h-2.5 text-neutral-500" />
+          </button>
+          {listTypeOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setListTypeOpen(false)} />
+              <div
+                role="menu"
+                aria-label="List type"
+                className={`absolute top-full left-0 mt-1.5 w-44 bg-[#121929] border border-[#23334d] rounded-lg shadow-2xl py-1 z-40 ${MOBILE_POPOVER}`}
+              >
+                {listTypes.map(({ value, label, Icon }) => {
+                  const isSelected = currentListType?.value === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={isSelected}
+                      onClick={() => {
+                        if (value === 'bulletList') {
+                          editor.chain().focus().toggleBulletList().run();
+                        } else {
+                          editor.chain().focus().toggleOrderedList().run();
+                        }
+                        setListTypeOpen(false);
+                      }}
+                      className={`w-full px-3 py-1.5 text-left hover:bg-[#1a2842] flex items-center gap-2 ${
+                        isSelected ? 'text-blue-400' : 'text-neutral-300'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      <span className="flex-1">{label}</span>
+                      {isSelected && <Check className="w-3 h-3" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Indents and line spacing (hidden on phones until expanded) */}
         <div className={secondary}>
