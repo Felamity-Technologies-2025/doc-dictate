@@ -3,6 +3,7 @@ import logging
 from flask import Blueprint, request, jsonify, send_file
 from services.document_service import document_service
 from services.export_service import ExportError, export_document, export_filename
+from services.template_service import template_service
 
 logger = logging.getLogger(__name__)
 documents_bp = Blueprint('documents', __name__)
@@ -121,7 +122,8 @@ def export_document_file(document_id):
         return jsonify({'success': False, 'error': f'Document {document_id} not found.'}), 404
 
     try:
-        data = export_document(doc.get('content') or '', doc.get('title') or 'Document', fmt)
+        data = export_document(doc.get('content') or '', doc.get('title') or 'Document', fmt,
+                               image_loader=template_service.get_image_by_id)
     except ExportError as e:
         return jsonify({'success': False, 'error': str(e)}), 422
     except Exception as e:
@@ -145,7 +147,7 @@ def preview_document():
     if not isinstance(content, str) or not isinstance(title, str):
         return jsonify({'success': False, 'error': '"content" and "title" must be strings.'}), 400
     try:
-        pdf = export_document(content, title, 'pdf')
+        pdf = export_document(content, title, 'pdf', image_loader=template_service.get_image_by_id)
     except ExportError as e:
         return jsonify({'success': False, 'error': str(e)}), 422
     except Exception as e:

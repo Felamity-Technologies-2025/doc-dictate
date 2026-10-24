@@ -121,6 +121,35 @@ class TemplateService:
             # Horizontal placement of the heading in the source document (NULL = left)
             if 'align' not in columns:
                 conn.execute("ALTER TABLE template_fields ADD COLUMN align TEXT")
+            # Source page of the heading and its vertical position on that page (fraction, 0 = top)
+            if 'page' not in columns:
+                conn.execute("ALTER TABLE template_fields ADD COLUMN page INTEGER")
+            if 'pos_y' not in columns:
+                conn.execute("ALTER TABLE template_fields ADD COLUMN pos_y REAL")
+            # Page geometry of the source document (points); NULL for templates without layout
+            template_columns = {row[1] for row in conn.execute("PRAGMA table_info(templates)")}
+            for column, kind in (('page_count', 'INTEGER'), ('page_width', 'REAL'), ('page_height', 'REAL')):
+                if column not in template_columns:
+                    conn.execute(f"ALTER TABLE templates ADD COLUMN {column} {kind}")
+            # Pictures (logos, banners...) of the source document with their placement as page fractions.
+            # Not cascaded: documents created from a template keep showing its pictures after it is deleted.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS template_images (
+                    id TEXT PRIMARY KEY,
+                    template_id TEXT NOT NULL,
+                    page INTEGER NOT NULL,
+                    x REAL NOT NULL,
+                    y REAL NOT NULL,
+                    w REAL NOT NULL,
+                    h REAL NOT NULL,
+                    mime TEXT NOT NULL,
+                    data BLOB NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_template_images_template ON template_images(template_id, page, y)"
+            )
             conn.commit()
 
     # ------------------------------------------------------------------ helpers
@@ -153,6 +182,8 @@ class TemplateService:
                 'is_custom': bool(row['is_custom']),
                 'table_id': row['table_id'],
                 'align': row['align'],
+                'page': row['page'],
+                'pos_y': row['pos_y'],
                 'created_at': row['created_at'],
                 'updated_at': row['updated_at'],
             })
@@ -209,7 +240,8 @@ class TemplateService:
     # ------------------------------------------------------------------ templates
 
     def create_template(self, template_name: str, fields: List[Dict], original_filename: str = None,
-                        document_type: str = None, extraction_method: str = None) -> Dict:
+                        document_type: str = None, extraction_method: str = None,
+                        pages: Optional[Dict] = None, images: Optional[List] = None) -> Dict:
         """
         Persist a template and its extracted fields in one transaction.
         `fields` items: {heading, field_type, parent_index (index into `fields` or None),
@@ -223,15 +255,28 @@ class TemplateService:
         now = _now()
         field_ids = [str(uuid.uuid4()) for _ in fields]
         table_ids: Dict = {}
+        # Source page numbers are renumbered 1..n over the pages that hold content
+        page_numbers = {number: index for index, number in enumerate((pages or {}).get('numbers') or [], start=1)}
         conn = self._get_connection()
         try:
             with conn:  # one transaction: all-or-nothing
                 conn.execute(
                     """INSERT INTO templates (id, template_name, original_filename, document_type,
-                                              extraction_method, created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (template_id, name, original_filename, document_type, extraction_method, now, now),
+                                              extraction_method, created_at, updated_at,
+                                              page_count, page_width, page_height)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (template_id, name, original_filename, document_type, extraction_method, now, now,
+                     len(page_numbers) or None, (pages or {}).get('width'), (pages or {}).get('height')),
                 )
+                for image in (images or []) if page_numbers else []:
+                    if image.page not in page_numbers:
+                        continue
+                    conn.execute(
+                        """INSERT INTO template_images (id, template_id, page, x, y, w, h, mime, data, created_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (str(uuid.uuid4()), template_id, page_numbers[image.page], image.x, image.y, image.w,
+                         image.h, image.mime, sqlite3.Binary(image.data), now),
+                    )
                 for index, field in enumerate(fields):
                     parent_index = field.get('parent_index')
                     parent_id = (
@@ -244,11 +289,13 @@ class TemplateService:
                     conn.execute(
                         """INSERT INTO template_fields (id, template_id, heading, field_type, field_order,
                                                         parent_field_id, is_custom, created_at, updated_at, table_id,
-                                                        align)
-                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+                                                        align, page, pos_y)
+                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
                         (field_ids[index], template_id, clean_heading(field['heading']),
                          clean_field_type(field.get('field_type'), 'section'), index + 1, parent_id, now, now,
-                         table_id, field.get('align') if field.get('align') in ALIGNMENTS else None),
+                         table_id, field.get('align') if field.get('align') in ALIGNMENTS else None,
+                         page_numbers.get(field.get('page')) if page_numbers else None,
+                         field.get('pos_y') if page_numbers else None),
                     )
         finally:
             conn.close()
@@ -279,7 +326,25 @@ class TemplateService:
             template['document_count'] = conn.execute(
                 "SELECT COUNT(*) FROM documents WHERE template_id = ?", (template_id,)
             ).fetchone()[0]
+            template['images'] = [dict(r) for r in conn.execute(
+                "SELECT id, page, x, y, w, h, mime FROM template_images WHERE template_id = ? ORDER BY page, y, x",
+                (template_id,),
+            ).fetchall()]
             return template
+
+    def get_image(self, template_id: str, image_id: str) -> Optional[Dict]:
+        """{mime, data} of one template picture, or None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT mime, data FROM template_images WHERE id = ? AND template_id = ?", (image_id, template_id)
+            ).fetchone()
+            return {'mime': row['mime'], 'data': bytes(row['data'])} if row else None
+
+    def get_image_by_id(self, image_id: str) -> Optional[Dict]:
+        """Picture lookup for exports, which only know the image id stored in the document."""
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT mime, data FROM template_images WHERE id = ?", (image_id,)).fetchone()
+            return {'mime': row['mime'], 'data': bytes(row['data'])} if row else None
 
     def rename_template(self, template_id: str, template_name: str) -> Dict:
         name = clean_template_name(template_name)
@@ -306,6 +371,9 @@ class TemplateService:
                     "UPDATE documents SET template_id = NULL WHERE template_id = ?", (template_id,)
                 ).rowcount
                 conn.execute("DELETE FROM template_fields WHERE template_id = ?", (template_id,))
+                if not detached:
+                    # Pictures are kept while documents created from the template still show them
+                    conn.execute("DELETE FROM template_images WHERE template_id = ?", (template_id,))
                 conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
             return detached
         finally:
@@ -350,6 +418,11 @@ class TemplateService:
                 else:
                     insert_at = len(ids)
 
+                # A new field belongs to the page of the field it follows (or the first field's page)
+                neighbour = rows[insert_at - 1] if insert_at > 0 else (rows[0] if rows else None)
+                page = neighbour['page'] if neighbour is not None else None
+                pos_y = neighbour['pos_y'] if neighbour is not None else None
+
                 # A field added between two columns of a table becomes a column of that table
                 table_id = None
                 if 0 < insert_at < len(rows):
@@ -359,10 +432,11 @@ class TemplateService:
 
                 conn.execute(
                     """INSERT INTO template_fields (id, template_id, heading, field_type, field_order,
-                                                    parent_field_id, is_custom, created_at, updated_at, table_id)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                                    parent_field_id, is_custom, created_at, updated_at, table_id,
+                                                    page, pos_y)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (new_id, template_id, heading, field_type, len(ids) + 1, parent_field_id,
-                     1 if is_custom else 0, now, now, table_id),
+                     1 if is_custom else 0, now, now, table_id, page, pos_y),
                 )
                 ids.insert(insert_at, new_id)
                 self._renumber(conn, template_id, ids, now)

@@ -1,7 +1,7 @@
 """
 Reusable document templates API.
 
-POST   /api/templates/upload                         PDF -> LLM heading extraction -> saved template
+POST   /api/templates/upload                         PDF/DOCX -> LLM heading extraction -> saved template
 GET    /api/templates                                list templates
 GET    /api/templates/<id>                           template with ordered fields
 PUT    /api/templates/<id>                           rename
@@ -15,13 +15,17 @@ import json
 import logging
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 from werkzeug.utils import secure_filename
 
 from config import Config
 from services.document_service import document_service
 from services.pdf_service import PdfProcessingError
-from services.template_extraction_service import ExtractionError, extract_template_structure
+from services.template_extraction_service import (
+    ExtractionError,
+    extract_template_structure,
+    extract_template_structure_from_docx,
+)
 from services.template_service import (
     TemplateNotFoundError,
     TemplateValidationError,
@@ -70,35 +74,51 @@ def _handle_service_errors(fn):
 
 @templates_bp.route('/upload', methods=['POST'])
 def upload_template():
-    """multipart/form-data: file=<pdf>, template_name=<optional override>"""
+    """multipart/form-data: file=<pdf|docx>, template_name=<optional override>"""
     if request.content_length and request.content_length > Config.TEMPLATE_PDF_MAX_BYTES + 64 * 1024:
-        return _error(f'The PDF exceeds the {Config.TEMPLATE_PDF_MAX_BYTES // (1024 * 1024)} MB template limit.', 413)
+        return _error(f'The file exceeds the {Config.TEMPLATE_PDF_MAX_BYTES // (1024 * 1024)} MB template limit.', 413)
 
     upload = request.files.get('file')
     if upload is None:
-        return _error('No PDF provided. Expecting form-data field "file".', 400)
+        return _error('No template file provided. Expecting form-data field "file".', 400)
+    if not upload.filename:
+        return _error('The template file must have a filename.', 400)
     filename = secure_filename(upload.filename or '') or 'template.pdf'
-    if not upload.filename or not upload.filename.lower().endswith('.pdf'):
-        return _error('Only PDF files can be uploaded as templates.', 400)
-    if upload.mimetype not in ('application/pdf', 'application/x-pdf', 'application/octet-stream', ''):
-        return _error('Only PDF files can be uploaded as templates.', 400)
+    extension = os.path.splitext(filename)[1].lower()
+    mimetype = upload.mimetype or ''
+    if extension == '.pdf':
+        allowed_mimetypes = ('application/pdf', 'application/x-pdf', 'application/octet-stream', '')
+    elif extension == '.docx':
+        allowed_mimetypes = (
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/octet-stream',
+            '',
+        )
+    else:
+        return _error('Only PDF and DOCX files can be uploaded as templates.', 400)
+    if mimetype not in allowed_mimetypes:
+        return _error('Only PDF and DOCX files can be uploaded as templates.', 400)
 
     # Read at most limit+1 bytes so oversized uploads are detected without loading everything
     data = upload.stream.read(Config.TEMPLATE_PDF_MAX_BYTES + 1)
     if len(data) > Config.TEMPLATE_PDF_MAX_BYTES:
-        return _error(f'The PDF exceeds the {Config.TEMPLATE_PDF_MAX_BYTES // (1024 * 1024)} MB template limit.', 413)
+        return _error(f'The file exceeds the {Config.TEMPLATE_PDF_MAX_BYTES // (1024 * 1024)} MB template limit.', 413)
     if not data:
         return _error('The uploaded file is empty.', 400)
 
     try:
-        result = extract_template_structure(data, filename)
+        result = (
+            extract_template_structure(data, filename)
+            if extension == '.pdf'
+            else extract_template_structure_from_docx(data, filename)
+        )
     except PdfProcessingError as e:
         return _error(str(e), 422)
     except ExtractionError as e:
         return _error(e.message, e.status_code)
     except Exception:
         logger.error("Unexpected template extraction failure", exc_info=True)
-        return _error('The PDF could not be processed.', 500)
+        return _error('The template file could not be processed.', 500)
 
     override = (request.form.get('template_name') or '').strip()
     fallback = os.path.splitext(upload.filename)[0].strip() or 'Untitled Template'
@@ -111,6 +131,8 @@ def upload_template():
             original_filename=upload.filename[:255],
             document_type=result.document_type,
             extraction_method=result.method,
+            pages=result.pages,
+            images=result.images,
         )
     except TemplateValidationError as e:
         return _error(str(e), 400)
@@ -122,6 +144,7 @@ def upload_template():
         'success': True,
         'template': template,
         'extraction': {'method': result.method, 'page_count': result.page_count,
+                       'source_type': result.source_type,
                        'field_count': len(result.fields)},
     }), 201
 
@@ -142,6 +165,17 @@ def get_template(template_id):
     if not template:
         return _error(f'Template {template_id} not found.', 404)
     return jsonify({'success': True, 'template': template}), 200
+
+
+@templates_bp.route('/<template_id>/images/<image_id>', methods=['GET'])
+@_handle_service_errors
+def get_template_image(template_id, image_id):
+    image = template_service.get_image(template_id, image_id)
+    if not image:
+        return _error('Image not found.', 404)
+    response = Response(image['data'], mimetype=image['mime'])
+    response.headers['Cache-Control'] = 'private, max-age=31536000, immutable'  # image ids are never reused
+    return response
 
 
 @templates_bp.route('/<template_id>', methods=['PUT'])

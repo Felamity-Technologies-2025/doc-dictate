@@ -369,3 +369,43 @@ body {
   float: none;
   height: auto;
 }
+
+/* Template pages: one sheet per page of the source document, in its proportions */
+.ProseMirror .template-page {
+  box-sizing: border-box;
+  margin: 0 0 1.5rem 0;
+  border: 1px solid #1e2c47;
+  border-radius: 0.25rem;
+  background-color: #0f1626;
+}
+
+.ProseMirror .template-page:last-child { margin-bottom: 0; }
+
+/* Pictures of the source document at their position (inline styles set width and offsets) */
+.ProseMirror img.template-image {
+  display: block;
+  max-width: none;
+  height: auto;
+  margin-right: 0;
+  margin-bottom: 0;
+  border: 0;
+  border-radius: 0;
+  user-select: none;
+}
+
+.ProseMirror img.template-image.ProseMirror-selectednode { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+/* In the print view the pages are the sheets: drop the single surrounding sheet */
+.paper-page:has(.template-page) {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-height: 0 !important;
+}
+
+.paper-page .ProseMirror .template-page {
+  background-color: #ffffff;
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+}

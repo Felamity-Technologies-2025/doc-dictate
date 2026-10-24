@@ -42,7 +42,7 @@ class Config:
     # CORS
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*').split(',')
 
-    # Document templates (PDF upload + LLM heading extraction)
+    # Document templates (PDF/DOCX upload + LLM heading extraction)
     TEMPLATE_PDF_MAX_BYTES = int(os.getenv('TEMPLATE_PDF_MAX_BYTES', 10 * 1024 * 1024))  # 10 MB
     TEMPLATE_PDF_MAX_PAGES = int(os.getenv('TEMPLATE_PDF_MAX_PAGES', 50))
     # Pages rendered to images and sent to the vision model when a PDF has no text layer
@@ -50,6 +50,12 @@ class Config:
     # Upper bound on extracted text sent to the LLM
     LLM_MAX_INPUT_CHARS = int(os.getenv('LLM_MAX_INPUT_CHARS', 40000))
 
+    # Active LLM client for template extraction: 'ragsuite' (ragsuite_client.py) or 'django' (djangoLLM_client.py)
+    LLM_CLIENT = os.getenv('LLM_CLIENT', 'ragsuite').strip().lower()
+    RAGSUITE_ENDPOINT = os.getenv('RAGSUITE_ENDPOINT', 'http://localhost:5641/query-data/HOME')
+    # Model loaded in RAGSUITE when it has none loaded (ids as listed by RAGSUITE's /api/eligible_models);
+    # empty = select the model in the RAGSUITE app yourself
+    RAGSUITE_MODEL_ID = os.getenv('RAGSUITE_MODEL_ID', 'claude-haiku-4.5')
     # Django LLM gateway (credentials are read by djangoLLM_client.py from the environment)
     # Provider names must match the gateway's spelling (see /api/quota/): OpenAI, Gemini, Amazon Bedrock, Mistral
     DJANGO_LLM_PROVIDER = os.getenv('DJANGO_LLM_PROVIDER', 'OpenAI')

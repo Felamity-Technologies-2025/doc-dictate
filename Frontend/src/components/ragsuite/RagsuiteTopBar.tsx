@@ -147,7 +147,7 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
         <button
           onClick={onOpenTemplates}
           className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-neutral-200 hover:text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-normal flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
-          title="Upload PDF templates and create documents from them"
+          title="Upload PDF or DOCX templates and create documents from them"
         >
           <LayoutTemplate className="w-4 h-4 text-blue-400" />
           <span className="hidden lg:inline">Templates</span>

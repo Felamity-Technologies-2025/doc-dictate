@@ -73,7 +73,7 @@ python -m unittest discover -s tests
 | `PUT` | `/api/documents/<id>` | Update document |
 | `DELETE` | `/api/documents/<id>` | Delete document |
 | `GET` | `/api/documents/<id>/export?format=docx\|pdf` | Download the saved document as DOCX or PDF |
-| `POST` | `/api/templates/upload` | Upload a PDF (`file`, optional `template_name`); the LLM extracts its headings |
+| `POST` | `/api/templates/upload` | Upload a PDF or DOCX (`file`, optional `template_name`); the LLM extracts its headings |
 | `GET` | `/api/templates` | List templates (with field/document counts) |
 | `GET` | `/api/templates/<id>` | Template with its ordered fields |
 | `PUT` | `/api/templates/<id>` | Rename (`template_name`) |
@@ -83,14 +83,14 @@ python -m unittest discover -s tests
 | `DELETE` | `/api/templates/<id>/fields/<field_id>` | Remove a field from the template |
 | `POST` | `/api/templates/<id>/documents` | Create a completed document linked to the template |
 
-## PDF Templates (LLM heading extraction)
+## PDF and DOCX Templates (LLM heading extraction)
 
-Users upload a PDF (letter, legal opinion, report...). The backend extracts its text with PyMuPDF
-(pages without a text layer are rendered to images and read by a vision model), sends it to the
-Django LLM gateway through `djangoLLM_client.py`, and asks for **structure only**: headings, field
-labels, their order and nesting. The JSON answer is validated and normalized (values such as
-`From: Giri Nadhan` are reduced to `From`) and saved in SQLite. No embeddings, vector store or
-retrieval are involved.
+Users upload a PDF or DOCX (letter, legal opinion, report...). The backend extracts PDF text with
+PyMuPDF (pages without a text layer are rendered to images and read by a vision model) or reads
+paragraph and table text from DOCX, then sends it to the Django LLM gateway through
+`djangoLLM_client.py` and asks for **structure only**: headings, field labels, their order and
+nesting. The JSON answer is validated and normalized (values such as `From: Giri Nadhan` are
+reduced to `From`) and saved in SQLite. No embeddings, vector store or retrieval are involved.
 
 Opening a template in the editor shows each heading with an empty content area. Users type or
 dictate into the active field (Tab / Shift+Tab moves between fields), add their own custom fields,

@@ -94,16 +94,21 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
     setStage('idle');
     setProgress(0);
     if (!chosen) return;
-    if (!chosen.name.toLowerCase().endsWith('.pdf') && chosen.type !== 'application/pdf') {
+    const fileName = chosen.name.toLowerCase();
+    const isPdf = fileName.endsWith('.pdf') || chosen.type === 'application/pdf';
+    const isDocx =
+      fileName.endsWith('.docx') ||
+      chosen.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (!isPdf && !isDocx) {
       setFile(null);
       setStage('error');
-      setUploadMessage('Please choose a PDF file.');
+      setUploadMessage('Please choose a PDF or DOCX file.');
       return;
     }
     if (chosen.size > maxUploadMb * 1024 * 1024) {
       setFile(null);
       setStage('error');
-      setUploadMessage(`The PDF is larger than the ${maxUploadMb} MB limit.`);
+      setUploadMessage(`The file is larger than the ${maxUploadMb} MB limit.`);
       return;
     }
     setFile(chosen);
@@ -124,9 +129,14 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
         nameOverride
       );
       setStage('done');
-      const method = METHOD_LABELS[result.extraction.method] || result.extraction.method;
+      const method = result.extraction.source_type === 'docx' && result.extraction.method === 'text'
+        ? 'document text'
+        : METHOD_LABELS[result.extraction.method] || result.extraction.method;
+      const sourceDescription = result.extraction.source_type === 'docx'
+        ? 'from the DOCX document'
+        : `from ${result.extraction.page_count} page(s)`;
       setUploadMessage(
-        `Saved "${result.template.template_name}" with ${result.template.fields.length} heading(s), extracted from ${result.extraction.page_count} page(s) using the ${method}.`
+        `Saved "${result.template.template_name}" with ${result.template.fields.length} heading(s), extracted ${sourceDescription} using the ${method}.`
       );
       setHighlightId(result.template.id);
       setExpanded((prev) => ({ ...prev, [result.template.id]: result.template }));
@@ -233,10 +243,10 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
               <div>
                 <div className="text-xs font-semibold text-white flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-                  Create a template from a PDF
+                  Create a template from a PDF or DOCX
                 </div>
                 <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed">
-                  The LLM reads the PDF and keeps only its headings and field labels (From, To, Subject,
+                  The LLM reads the document and keeps only its headings and field labels (From, To, Subject,
                   section titles...). Names, dates and other filled-in content are not saved.
                 </p>
               </div>
@@ -255,7 +265,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf,.pdf"
+              accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
               className="hidden"
               onChange={(e) => handleFileChosen(e.target.files?.[0] || null)}
             />
@@ -267,7 +277,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
                 className="px-3 py-1.5 bg-[#18233a] hover:bg-[#1f2d48] border border-[#23334d] text-white rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload className="w-3.5 h-3.5 text-blue-400" />
-                Choose PDF
+                Choose PDF or DOCX
               </button>
               <span className="text-xs text-neutral-300 truncate max-w-[16rem]" title={file?.name}>
                 {file ? `${file.name} (${(file.size / 1024).toFixed(0)} KB)` : `No file selected (max ${maxUploadMb} MB)`}
@@ -306,8 +316,8 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
                 <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
                   <Loader2 className="w-3 h-3 animate-spin text-blue-400" />
                   {stage === 'uploading'
-                    ? `Uploading PDF... ${progress}%`
-                    : 'Reading the PDF and extracting headings with the LLM (this can take up to a minute)...'}
+                    ? `Uploading file... ${progress}%`
+                    : 'Reading the document and extracting headings with the LLM (this can take up to a minute)...'}
                 </div>
               </div>
             )}
@@ -348,7 +358,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
               </div>
             ) : templates.length === 0 ? (
               <div className="py-8 text-center text-neutral-400 text-xs">
-                No templates yet. Upload a PDF to create your first reusable template.
+                No templates yet. Upload a PDF or DOCX to create your first reusable template.
               </div>
             ) : (
               <div className="divide-y divide-[#1e2c47] border border-[#1e2c47] rounded-lg bg-[#131b2e]">

@@ -113,6 +113,26 @@ class Block:
     line_height: Optional[str] = None
     rows: list = field(default_factory=list)  # table: list[list[list[Run]]], header flags in header_rows
     header_rows: set = field(default_factory=set)
+    # image: picture bytes and its placement as page fractions (x, w of the width; gap, h of the height)
+    image: Optional[bytes] = None
+    mime: Optional[str] = None
+    x: float = 0.0
+    w: float = 0.0
+    h: float = 0.0
+    gap: float = 0.0
+
+
+# Page padding of template pages, as fractions of the page WIDTH (the editor uses the same values)
+PAGE_PAD_X = 0.07
+PAGE_PAD_TOP = 0.05
+PAGE_PAD_BOTTOM = 0.06
+
+
+@dataclass
+class PageSetup:
+    """Size (points) of documents built from a template with pages; None = default paper."""
+    width: float
+    height: float
 
 
 def _parse_style(style: str) -> dict:
@@ -158,8 +178,11 @@ def _to_pt(size: Optional[str]) -> Optional[float]:
 class _BlockBuilder:
     """Walks the parsed DOM and produces a flat list of Blocks."""
 
-    def __init__(self):
+    def __init__(self, image_loader=None):
         self.blocks: List[Block] = []
+        self.image_loader = image_loader  # image id -> {mime, data} | None
+        self.page_setup: Optional[PageSetup] = None
+        self.pages_seen = 0
 
     # ---- inline
     def _inline(self, node, fmt: dict, runs: List[Run]):
@@ -235,7 +258,11 @@ class _BlockBuilder:
                     self.blocks.append(Block('quote' if in_quote else 'paragraph', [Run(child.strip())]))
                 continue
             tag = child.tag
-            if 'data-template-table' in child.attrs:
+            if 'data-template-page' in child.attrs:
+                self._template_page(child, list_depth, in_quote, heading_offset)
+            elif tag == 'img' and 'data-template-image' in child.attrs:
+                self._template_image(child)
+            elif 'data-template-table' in child.attrs:
                 self._template_table(child, list_depth, in_quote)
             elif 'data-template-field' in child.attrs:
                 self._template_field(child, list_depth, in_quote)
@@ -323,6 +350,35 @@ class _BlockBuilder:
                     yield child
                 else:
                     yield from self._iter_tags(child, tag)
+
+    def _template_page(self, node, list_depth, in_quote, heading_offset):
+        """A page of a template document: content follows a page break (except the first page)."""
+        if self.page_setup is None:
+            try:
+                width = float(node.attrs.get('data-width') or 0)
+                height = float(node.attrs.get('data-height') or 0)
+            except ValueError:
+                width = height = 0
+            if width > 50 and height > 50:
+                self.page_setup = PageSetup(width, height)
+        if self.pages_seen:
+            self.blocks.append(Block('pagebreak'))
+        self.pages_seen += 1
+        self.walk(node, list_depth, in_quote, heading_offset)
+
+    def _template_image(self, node):
+        image = self.image_loader(node.attrs.get('data-image-id', '')) if self.image_loader else None
+        if not image:
+            return
+
+        def fraction(key, default=0.0):
+            try:
+                return float(node.attrs.get(key, default))
+            except ValueError:
+                return default
+
+        self.blocks.append(Block('image', image=image['data'], mime=image['mime'], x=fraction('data-x'),
+                                 w=fraction('data-w', 0.2), h=fraction('data-h', 0.1), gap=fraction('data-gap')))
 
     def _template_table(self, node, list_depth, in_quote):
         """Column headings of a table-shaped template: header row of labels, one row of content cells."""
@@ -414,8 +470,12 @@ def _has_text(runs: List[Run]) -> bool:
     return any(r.text.strip() for r in runs if not r.is_break)
 
 
-def html_to_blocks(source: str) -> List[Block]:
-    builder = _BlockBuilder()
+def html_to_blocks(source: str, image_loader=None) -> List[Block]:
+    return _build_blocks(source, image_loader)[0]
+
+
+def _build_blocks(source: str, image_loader=None):
+    builder = _BlockBuilder(image_loader)
     builder.walk(parse_html(source))
     # The editor keeps an empty trailing paragraph after the last block; don't export it
     while builder.blocks and builder.blocks[-1].kind == 'paragraph' and not _has_text(builder.blocks[-1].runs):
@@ -425,7 +485,7 @@ def html_to_blocks(source: str) -> List[Block]:
         for row in block.rows:
             for cell in row:
                 _fix_colors(cell)
-    return builder.blocks
+    return builder.blocks, builder.page_setup
 
 
 def _fix_colors(runs: List[Run]):
@@ -496,14 +556,46 @@ def _docx_hr(paragraph):
     p_pr.append(borders)
 
 
-def blocks_to_docx(blocks: List[Block], title: str) -> bytes:
+def blocks_to_docx(blocks: List[Block], title: str, page_setup: Optional[PageSetup] = None) -> bytes:
     doc = DocxDocument()
     normal = doc.styles['Normal']
     normal.font.name = 'Calibri'
     normal.font.size = Pt(11)
     doc.core_properties.title = title
 
+    if page_setup:
+        width, height = page_setup.width, page_setup.height
+        section = doc.sections[0]
+        section.page_width, section.page_height = Pt(width), Pt(height)
+        section.left_margin = section.right_margin = Pt(width * PAGE_PAD_X)
+        section.top_margin = Pt(width * PAGE_PAD_TOP)
+        section.bottom_margin = Pt(width * PAGE_PAD_BOTTOM)
+    else:
+        width = height = 0
+
+    page_break_pending = False
     for block in blocks:
+        if block.kind == 'pagebreak':
+            page_break_pending = True
+            continue
+        if block.kind == 'table' and page_break_pending:
+            doc.add_paragraph().paragraph_format.page_break_before = True
+            page_break_pending = False
+        if block.kind == 'image':
+            page_w = width or 612.0
+            page_h = height or 792.0
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Pt((block.x - PAGE_PAD_X) * page_w)
+            p.paragraph_format.space_before = Pt(max(0.0, block.gap * page_h))
+            p.paragraph_format.space_after = Pt(0)
+            try:
+                p.add_run().add_picture(io.BytesIO(block.image), width=Pt(block.w * page_w))
+            except Exception:
+                logger.warning("Could not embed a template picture in the DOCX", exc_info=True)
+            if page_break_pending:
+                p.paragraph_format.page_break_before = True
+                page_break_pending = False
+            continue
         if block.kind == 'heading':
             p = doc.add_heading(level=min(block.level, 9))
             _add_docx_runs(p, block.runs)
@@ -533,7 +625,11 @@ def blocks_to_docx(blocks: List[Block], title: str) -> bytes:
             p.paragraph_format.space_after = Pt(0)
             _add_docx_runs(p, block.runs)
         elif block.kind == 'hr':
-            _docx_hr(doc.add_paragraph())
+            p = doc.add_paragraph()
+            _docx_hr(p)
+            if page_break_pending:
+                p.paragraph_format.page_break_before = True
+                page_break_pending = False
             continue
         elif block.kind == 'table':
             columns = max(len(row) for row in block.rows)
@@ -558,6 +654,9 @@ def blocks_to_docx(blocks: List[Block], title: str) -> bytes:
                     pass
         if block.align in _DOCX_ALIGN:
             p.alignment = _DOCX_ALIGN[block.align]
+        if page_break_pending:
+            p.paragraph_format.page_break_before = True
+            page_break_pending = False
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -625,10 +724,25 @@ def _runs_to_html(runs: List[Run]) -> str:
     return ''.join(out) or '&#160;'
 
 
-def blocks_to_html(blocks: List[Block]) -> str:
+_IMAGE_EXT = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif'}
+
+
+def blocks_to_html(blocks: List[Block], page_setup: Optional[PageSetup] = None, images: Optional[list] = None) -> str:
+    """`images` (if given) collects (name, bytes) of pictures referenced by the HTML."""
     parts = []
+    page_w = page_setup.width if page_setup else 595.0
+    page_h = page_setup.height if page_setup else 842.0
     for block in blocks:
         align = f' style="text-align:{block.align}"' if block.align else ''
+        if block.kind == 'image':
+            if images is None:
+                continue
+            name = f'img{len(images)}.{_IMAGE_EXT.get(block.mime, "png")}'
+            images.append((name, block.image))
+            left = (block.x - PAGE_PAD_X) * page_w
+            parts.append(f'<p style="margin:{block.gap * page_h:.1f}pt 0 0 {left:.1f}pt">'
+                         f'<img src="{name}" width="{block.w * page_w:.1f}" height="{block.h * page_h:.1f}"/></p>')
+            continue
         if block.kind == 'heading':
             parts.append(f'<h{block.level}{align}>{_runs_to_html(block.runs)}</h{block.level}>')
         elif block.kind == 'section':
@@ -669,21 +783,47 @@ def blocks_to_html(blocks: List[Block]) -> str:
     return '<html><body>' + '\n'.join(parts) + '</body></html>'
 
 
-def blocks_to_pdf(blocks: List[Block], title: str) -> bytes:
-    story = pymupdf.Story(html=blocks_to_html(blocks), user_css=PDF_CSS)
+def blocks_to_pdf(blocks: List[Block], title: str, page_setup: Optional[PageSetup] = None) -> bytes:
     buffer = io.BytesIO()
     writer = pymupdf.DocumentWriter(buffer)
-    page_rect = pymupdf.paper_rect('a4')
-    content_rect = page_rect + (56, 56, -56, -56)  # ~2 cm margins
-    more, pages = 1, 0
-    while more:
-        device = writer.begin_page(page_rect)
-        more, _ = story.place(content_rect)
-        story.draw(device)
-        writer.end_page()
-        pages += 1
-        if pages > 2000:
-            raise ExportError('The document is too long to export as PDF.')
+    if page_setup:
+        width, height = page_setup.width, page_setup.height
+        page_rect = pymupdf.Rect(0, 0, width, height)
+        content_rect = page_rect + (width * PAGE_PAD_X, width * PAGE_PAD_TOP,
+                                    -width * PAGE_PAD_X, -width * PAGE_PAD_BOTTOM)
+        css = PDF_CSS + 'body { margin: 0; }\n'
+    else:
+        page_rect = pymupdf.paper_rect('a4')
+        content_rect = page_rect + (56, 56, -56, -56)  # ~2 cm margins
+        css = PDF_CSS
+
+    # Each template page starts on a new PDF page (its content may still run over several)
+    chunks, current = [], []
+    for block in blocks:
+        if block.kind == 'pagebreak':
+            chunks.append(current)
+            current = []
+        else:
+            current.append(block)
+    chunks.append(current)
+
+    pages = 0
+    for chunk in chunks:
+        images: list = []
+        html_source = blocks_to_html(chunk or [Block('paragraph', [])], page_setup, images)
+        archive = pymupdf.Archive()
+        for name, data in images:
+            archive.add(data, name)
+        story = pymupdf.Story(html=html_source, user_css=css, archive=archive)
+        more = 1
+        while more:
+            device = writer.begin_page(page_rect)
+            more, _ = story.place(content_rect)
+            story.draw(device)
+            writer.end_page()
+            pages += 1
+            if pages > 2000:
+                raise ExportError('The document is too long to export as PDF.')
     writer.close()
 
     # Set document metadata
@@ -697,14 +837,15 @@ def blocks_to_pdf(blocks: List[Block], title: str) -> bytes:
 
 # ------------------------------------------------------------------ public
 
-def export_document(content_html: str, title: str, fmt: str) -> bytes:
-    blocks = html_to_blocks(content_html)
+def export_document(content_html: str, title: str, fmt: str, image_loader=None) -> bytes:
+    """`image_loader(image_id) -> {mime, data} | None` resolves template pictures in the document."""
+    blocks, page_setup = _build_blocks(content_html, image_loader)
     if not blocks:
         blocks = [Block('paragraph', [])]
     if fmt == 'docx':
-        return blocks_to_docx(blocks, title)
+        return blocks_to_docx(blocks, title, page_setup)
     if fmt == 'pdf':
-        return blocks_to_pdf(blocks, title)
+        return blocks_to_pdf(blocks, title, page_setup)
     raise ExportError(f'Unsupported export format: {fmt}')
 
 

@@ -12,6 +12,11 @@ import {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
+/** URL of a picture extracted from a template (logos, banners...) */
+export function templateImageUrl(templateId: string, imageId: string): string {
+  return `${API_BASE}/api/templates/${encodeURIComponent(templateId)}/images/${encodeURIComponent(imageId)}`;
+}
+
 export class ApiService {
   /**
    * Check backend health and configuration
@@ -181,7 +186,7 @@ export class ApiService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Upload a PDF to extract a reusable template. Uses XHR so upload progress can be reported;
+   * Upload a PDF or DOCX to extract a reusable template. Uses XHR so upload progress can be reported;
    * `onUploadProgress` receives 0-100, then the server extracts headings with the LLM.
    */
   static uploadTemplate(

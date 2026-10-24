@@ -2,12 +2,21 @@ import { Node, type Editor, type JSONContent } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Node as PMNode } from '@tiptap/pm/model';
-import type { TemplateField, TemplateFieldType } from '../types';
+import type { TemplateField, TemplateFieldType, TemplateModel } from '../types';
+import { templateImageUrl } from '../services/api';
 
 export const TEMPLATE_FIELD_NODE = 'templateField';
 export const TEMPLATE_TABLE_NODE = 'templateTable';
 export const TEMPLATE_TABLE_ROW_NODE = 'templateTableRow';
 export const TEMPLATE_TABLE_CELL_NODE = 'templateTableCell';
+export const TEMPLATE_PAGE_NODE = 'templatePage';
+export const TEMPLATE_IMAGE_NODE = 'templateImage';
+
+// Padding of a template page as fractions of the page WIDTH (the DOCX / PDF export uses the same values)
+const PAGE_PAD_X = 0.07;
+const PAGE_PAD_TOP = 0.05;
+const PAGE_PAD_BOTTOM = 0.06;
+const CONTENT_WIDTH = 1 - 2 * PAGE_PAD_X;
 
 export interface TemplateFieldAttrs {
   fieldId: string;
@@ -425,6 +434,121 @@ export const TemplateTableCellNode = Node.create({
   },
 });
 
+/**
+ * One page of the source document. Its content (headings, pictures) is laid out in page order; the sheet
+ * keeps the source page's proportions and grows when more is typed than fits.
+ * Serialized as <div data-template-page data-page data-width data-height> (size in points).
+ */
+export const TemplatePageNode = Node.create({
+  name: TEMPLATE_PAGE_NODE,
+  group: 'block',
+  content: 'block+',
+  defining: true,
+  isolating: true,
+  selectable: false,
+  draggable: false,
+
+  addAttributes() {
+    return {
+      page: {
+        default: 1,
+        parseHTML: (el) => parseInt(el.getAttribute('data-page') || '1', 10) || 1,
+        renderHTML: (attrs) => ({ 'data-page': String(attrs.page) }),
+      },
+      width: {
+        default: 612,
+        parseHTML: (el) => parseFloat(el.getAttribute('data-width') || '612') || 612,
+        renderHTML: (attrs) => ({ 'data-width': String(attrs.width) }),
+      },
+      height: {
+        default: 792,
+        parseHTML: (el) => parseFloat(el.getAttribute('data-height') || '792') || 792,
+        renderHTML: (attrs) => ({ 'data-height': String(attrs.height) }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-template-page]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const { width, height } = node.attrs;
+    return [
+      'div',
+      {
+        ...HTMLAttributes,
+        'data-template-page': '',
+        class: 'template-page',
+        // Percentage padding is relative to the page width, matching the export's margins
+        style: `aspect-ratio: ${width} / ${height}; padding: ${PAGE_PAD_TOP * 100}% ${PAGE_PAD_X * 100}% ${PAGE_PAD_BOTTOM * 100}%`,
+      },
+      0,
+    ];
+  },
+});
+
+/**
+ * A picture of the source document (logo, banner, signature...) at its horizontal position and size.
+ * `x` / `w` are fractions of the page width, `h` and `gap` (space above it) fractions of the page height.
+ */
+export const TemplateImageNode = Node.create({
+  name: TEMPLATE_IMAGE_NODE,
+  group: 'block',
+  atom: true,
+  selectable: true,
+  draggable: false,
+
+  addAttributes() {
+    const num = (name: string, fallback: number) => ({
+      default: fallback,
+      parseHTML: (el: HTMLElement) => {
+        const value = parseFloat(el.getAttribute(`data-${name}`) || '');
+        return Number.isFinite(value) ? value : fallback;
+      },
+      renderHTML: (attrs: Record<string, number>) => ({ [`data-${name}`]: String(attrs[name]) }),
+    });
+    return {
+      imageId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-image-id'),
+        renderHTML: (attrs) => ({ 'data-image-id': attrs.imageId }),
+      },
+      templateId: {
+        default: null,
+        parseHTML: (el) => el.getAttribute('data-template-id'),
+        renderHTML: (attrs) => ({ 'data-template-id': attrs.templateId }),
+      },
+      src: {
+        default: '',
+        parseHTML: (el) => el.getAttribute('src') || '',
+        renderHTML: (attrs) => ({ src: attrs.src }),
+      },
+      x: num('x', PAGE_PAD_X),
+      w: num('w', 0.2),
+      h: num('h', 0.1),
+      gap: num('gap', 0),
+      // Page height / width, to turn `gap` into a width-relative CSS margin
+      aspect: num('aspect', 792 / 612),
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'img[data-template-image]' }];
+  },
+
+  renderHTML({ node, HTMLAttributes }) {
+    const { x, w, gap, aspect } = node.attrs;
+    // Percentages of the page's content box (page width minus the side padding)
+    const style = [
+      `width: ${((w / CONTENT_WIDTH) * 100).toFixed(3)}%`,
+      `margin-left: ${(((x - PAGE_PAD_X) / CONTENT_WIDTH) * 100).toFixed(3)}%`,
+      `margin-top: ${(((gap * aspect) / CONTENT_WIDTH) * 100).toFixed(3)}%`,
+    ].join('; ');
+    return ['img', { ...HTMLAttributes, 'data-template-image': '', class: 'template-image', alt: '', draggable: 'false', style }];
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Helpers used by the app
 // ---------------------------------------------------------------------------
@@ -482,19 +606,113 @@ function templateBlocks(
   return blocks;
 }
 
-/** A blank document with one empty content area per template field, in template order */
-export function buildTemplateDocument(fields: TemplateField[]): JSONContent {
-  return { type: 'doc', content: templateBlocks(fields) };
+/** Page geometry and pictures of a template (absent / null for templates without page layout) */
+export type TemplateLayoutSource = Pick<TemplateModel, 'id' | 'page_count' | 'page_width' | 'page_height' | 'images'>;
+
+function isPaged(template?: TemplateLayoutSource | null): template is TemplateLayoutSource {
+  return !!template && !!template.page_count && !!template.page_width && !!template.page_height;
 }
 
-/** Field id -> body content of every template field in the editor */
+/** Page of each field: its own, else the page of the field before it (custom fields), else page 1 */
+function fieldPages(fields: TemplateField[], pageCount: number): number[] {
+  let current = 1;
+  return fields.map((f) => {
+    if (f.page && f.page >= 1) current = Math.min(f.page, pageCount);
+    return current;
+  });
+}
+
+/**
+ * The template laid out page by page: each page holds its headings in template order with the
+ * pictures of that page placed between them by vertical position.
+ */
+function pagedBlocks(
+  fields: TemplateField[],
+  template: TemplateLayoutSource,
+  contents?: Map<string, JSONContent[]>,
+  extraRows?: Map<string, Map<string, JSONContent[]>[]>
+): JSONContent[] {
+  const pageCount = template.page_count as number;
+  const width = template.page_width as number;
+  const height = template.page_height as number;
+  const aspect = height / width;
+  const topPad = (PAGE_PAD_TOP * width) / height; // top padding as a fraction of the page height
+  const pages = fieldPages(fields, pageCount);
+  const result: JSONContent[] = [];
+
+  for (let page = 1; page <= pageCount; page++) {
+    const pageFields = fields.filter((_, i) => pages[i] === page);
+    const pending = (template.images || []).filter((img) => img.page === page).sort((a, b) => a.y - b.y || a.x - b.x);
+    const content: JSONContent[] = [];
+    let bottom = topPad; // lowest point used so far on the page (fraction of the height)
+    let lastY = 0;
+    let chunk: TemplateField[] = [];
+
+    const flushFields = () => {
+      if (chunk.length) content.push(...templateBlocks(chunk, contents, extraRows));
+      chunk = [];
+    };
+    const placeImage = () => {
+      const img = pending.shift()!;
+      // Space above the picture; pictures in the top margin may rise into the page padding
+      const gap = bottom <= topPad ? Math.max(img.y - topPad, -topPad) : Math.max(img.y - bottom, 0);
+      content.push({
+        type: TEMPLATE_IMAGE_NODE,
+        attrs: {
+          imageId: img.id, templateId: template.id, src: templateImageUrl(template.id, img.id),
+          x: img.x, w: img.w, h: img.h, gap: Number(gap.toFixed(4)), aspect: Number(aspect.toFixed(4)),
+        },
+      });
+      bottom = Math.max(bottom, img.y + img.h);
+    };
+
+    for (const field of pageFields) {
+      const y = field.pos_y ?? lastY;
+      lastY = y;
+      if (pending.length && pending[0].y < y) {
+        flushFields();
+        while (pending.length && pending[0].y < y) placeImage();
+      }
+      chunk.push(field);
+      bottom = Math.max(bottom, y + 0.03);
+    }
+    flushFields();
+    while (pending.length) placeImage();
+
+    result.push({
+      type: TEMPLATE_PAGE_NODE,
+      attrs: { page, width, height },
+      content: content.length ? content : [{ type: 'paragraph' }],
+    });
+  }
+  return result;
+}
+
+function documentBlocks(
+  fields: TemplateField[],
+  template?: TemplateLayoutSource | null,
+  contents?: Map<string, JSONContent[]>,
+  extraRows?: Map<string, Map<string, JSONContent[]>[]>
+): JSONContent[] {
+  return isPaged(template) ? pagedBlocks(fields, template, contents, extraRows) : templateBlocks(fields, contents, extraRows);
+}
+
+/**
+ * A blank document with one empty content area per template field, in template order.
+ * With a template that has page layout, the document has the same pages, pictures and placement.
+ */
+export function buildTemplateDocument(fields: TemplateField[], template?: TemplateLayoutSource | null): JSONContent {
+  return { type: 'doc', content: documentBlocks(fields, template) };
+}
+
 /** Table id -> content of the rows added under that table (one map of column id -> content per row) */
 function tableRowContents(editor: Editor): Map<string, Map<string, JSONContent[]>[]> {
   const map = new Map<string, Map<string, JSONContent[]>[]>();
-  editor.state.doc.forEach((node) => {
-    if (node.type.name !== TEMPLATE_TABLE_NODE) return;
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === TEMPLATE_PAGE_NODE) return true;
+    if (node.type.name !== TEMPLATE_TABLE_NODE) return false;
     const tableId = node.firstChild?.attrs.tableId as string | null | undefined;
-    if (!tableId) return;
+    if (!tableId) return false;
     const rows: Map<string, JSONContent[]>[] = [];
     node.forEach((child) => {
       if (child.type.name !== TEMPLATE_TABLE_ROW_NODE) return;
@@ -505,16 +723,27 @@ function tableRowContents(editor: Editor): Map<string, Map<string, JSONContent[]
       rows.push(row);
     });
     if (rows.length) map.set(tableId, rows);
+    return false;
   });
   return map;
 }
 
+/** Field id -> body content of every template field in the editor */
 function fieldContents(editor: Editor): Map<string, JSONContent[]> {
   const map = new Map<string, JSONContent[]>();
   for (const { node } of findTemplateFields(editor.state.doc)) {
     if (node.attrs.fieldId) map.set(node.attrs.fieldId, (node.toJSON().content as JSONContent[]) || []);
   }
   return map;
+}
+
+/** Page number (attrs.page of the enclosing page node) of the node at `pos`, or null */
+function pageAt(doc: PMNode, pos: number): number | null {
+  const $pos = doc.resolve(pos);
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    if ($pos.node(depth).type.name === TEMPLATE_PAGE_NODE) return $pos.node(depth).attrs.page as number;
+  }
+  return null;
 }
 
 export function isTemplateDocument(editor: Editor | null): boolean {
@@ -526,18 +755,27 @@ export function documentFieldIds(editor: Editor | null): string[] {
   return findTemplateFields(editor.state.doc).map((f) => f.node.attrs.fieldId as string);
 }
 
-/** True when the document's fields (ids, names, types, nesting, order) match the template definition */
-export function documentMatchesTemplate(editor: Editor | null, fields: TemplateField[]): boolean {
+/**
+ * True when the document's fields (ids, names, types, nesting, order) match the template definition.
+ * With `template`, the page each field is on must match too.
+ */
+export function documentMatchesTemplate(
+  editor: Editor | null,
+  fields: TemplateField[],
+  template?: TemplateLayoutSource | null
+): boolean {
   if (!editor) return true;
   const nodes = findTemplateFields(editor.state.doc);
   if (nodes.length !== fields.length) return false;
-  return nodes.every(({ node }, i) => {
+  const pages = isPaged(template) ? fieldPages(fields, template.page_count as number) : null;
+  return nodes.every(({ node, pos }, i) => {
     const f = fields[i];
     const a = node.attrs as TemplateFieldAttrs;
     return (
       a.fieldId === f.id && a.heading === f.heading && a.fieldType === f.field_type &&
       a.level === f.level && a.isCustom === f.is_custom && (a.tableId ?? null) === (f.table_id ?? null) &&
-      (a.align ?? null) === (f.align ?? null)
+      (a.align ?? null) === (f.align ?? null) &&
+      (!template || pageAt(editor.state.doc, pos) === (pages ? pages[i] : null))
     );
   });
 }
@@ -565,46 +803,77 @@ export function getActiveTemplateField(editor: Editor | null): TemplateFieldAttr
   return active ? (active.node.attrs as TemplateFieldAttrs) : null;
 }
 
+const STRUCTURE_NODES = [TEMPLATE_FIELD_NODE, TEMPLATE_TABLE_NODE, TEMPLATE_PAGE_NODE, TEMPLATE_IMAGE_NODE];
+
 /**
- * Rebuild the open document so its fields match `fields` (order, names, nesting),
+ * Rebuild the open document so its fields match `fields` (order, names, nesting, pages),
  * keeping everything already typed into fields that still exist. Fields that are
  * no longer in the template are dropped; content outside fields is kept at the end.
  */
-export function syncTemplateDocument(editor: Editor, fields: TemplateField[]): void {
+export function syncTemplateDocument(
+  editor: Editor,
+  fields: TemplateField[],
+  template?: TemplateLayoutSource | null
+): void {
   const contents = fieldContents(editor);
   const extraRows = tableRowContents(editor);
   const activeId = getActiveTemplateField(editor)?.fieldId;
   const loose: JSONContent[] = [];
-  editor.state.doc.forEach((node) => {
-    if (node.type.name !== TEMPLATE_FIELD_NODE && node.type.name !== TEMPLATE_TABLE_NODE && node.textContent.trim()) loose.push(node.toJSON());
-  });
-
-  const doc: JSONContent = {
-    type: 'doc',
-    content: [...templateBlocks(fields, contents, extraRows), ...loose],
+  const collectLoose = (node: PMNode) => {
+    if (node.type.name === TEMPLATE_PAGE_NODE) node.forEach(collectLoose);
+    else if (!STRUCTURE_NODES.includes(node.type.name) && node.textContent.trim()) loose.push(node.toJSON());
   };
-  editor.chain().setContent(doc).run();
+  editor.state.doc.forEach(collectLoose);
+
+  const blocks = documentBlocks(fields, template, contents, extraRows);
+  const last = blocks[blocks.length - 1];
+  if (loose.length && last?.type === TEMPLATE_PAGE_NODE) {
+    // Typed text outside the fields stays in the document, on the last page
+    const kept = (last.content || []).filter((n) => !(n.type === 'paragraph' && !n.content));
+    last.content = [...kept, ...loose];
+  } else {
+    blocks.push(...loose);
+  }
+  editor.chain().setContent({ type: 'doc', content: blocks }).run();
   if (activeId && fields.some((f) => f.id === activeId)) {
     editor.commands.focusTemplateField(activeId);
   }
 }
 
-/** Empty every field's content, keeping the template structure */
+/** Empty every field's content, keeping the template structure (pages, pictures, headings) */
 export function clearTemplateFields(editor: Editor): void {
   const blank = (node: PMNode): JSONContent => ({
     type: TEMPLATE_FIELD_NODE, attrs: { ...node.attrs }, content: [{ type: 'paragraph' }],
   });
+  const clear = (node: PMNode): JSONContent | null => {
+    switch (node.type.name) {
+      case TEMPLATE_TABLE_NODE: {
+        const columns: JSONContent[] = [];
+        node.forEach((column) => {
+          if (column.type.name === TEMPLATE_FIELD_NODE) columns.push(blank(column));
+        });
+        return { type: TEMPLATE_TABLE_NODE, content: columns };
+      }
+      case TEMPLATE_FIELD_NODE:
+        return blank(node);
+      case TEMPLATE_IMAGE_NODE:
+        return node.toJSON();
+      case TEMPLATE_PAGE_NODE: {
+        const children: JSONContent[] = [];
+        node.forEach((child) => {
+          const cleared = clear(child);
+          if (cleared) children.push(cleared);
+        });
+        return { type: TEMPLATE_PAGE_NODE, attrs: { ...node.attrs }, content: children.length ? children : [{ type: 'paragraph' }] };
+      }
+      default:
+        return null;
+    }
+  };
   const doc: JSONContent = { type: 'doc', content: [] };
   editor.state.doc.forEach((node) => {
-    if (node.type.name === TEMPLATE_TABLE_NODE) {
-      const columns: JSONContent[] = [];
-      node.forEach((column) => {
-        if (column.type.name === TEMPLATE_FIELD_NODE) columns.push(blank(column));
-      });
-      doc.content!.push({ type: TEMPLATE_TABLE_NODE, content: columns });
-    } else if (node.type.name === TEMPLATE_FIELD_NODE) {
-      doc.content!.push(blank(node));
-    }
+    const cleared = clear(node);
+    if (cleared) doc.content!.push(cleared);
   });
   editor.chain().setContent(doc).run();
 }

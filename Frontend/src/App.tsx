@@ -19,6 +19,8 @@ import {
   TemplateTableNode,
   TemplateTableRowNode,
   TemplateTableCellNode,
+  TemplatePageNode,
+  TemplateImageNode,
   buildTemplateDocument,
   clearTemplateFields,
   documentMatchesTemplate,
@@ -133,6 +135,8 @@ export default function App() {
       TemplateTableNode,
       TemplateTableRowNode,
       TemplateTableCellNode,
+      TemplatePageNode,
+      TemplateImageNode,
       TemplateFieldNode,
     ],
     content: '<p></p>',
@@ -299,7 +303,7 @@ export default function App() {
       title: `${template.template_name} - ${date}`,
       templateId: template.id,
       template,
-      content: buildTemplateDocument(template.fields),
+      content: buildTemplateDocument(template.fields, template),
     });
     if (template.fields.length) {
       editor.chain().focus().focusTemplateField(template.fields[0].id, 'start').run();
@@ -310,7 +314,7 @@ export default function App() {
   const handleTemplateFieldsChanged = (updated: TemplateModel) => {
     setActiveTemplate(updated);
     if (editor && docRef.current.templateId === updated.id) {
-      syncTemplateDocument(editor, updated.fields);
+      syncTemplateDocument(editor, updated.fields, updated);
     }
   };
 
@@ -327,7 +331,7 @@ export default function App() {
     ) {
       return;
     }
-    syncTemplateDocument(editor, activeTemplate.fields);
+    syncTemplateDocument(editor, activeTemplate.fields, activeTemplate);
   };
 
   const handleTemplateDeleted = (templateId: string) => {
@@ -506,7 +510,7 @@ export default function App() {
               onManageFields={() => setFieldsModal({ open: true, focusAdd: false })}
               onExport={handleExportDocument}
               exportingFormat={exportingFormat}
-              outOfSync={!documentMatchesTemplate(editor, activeTemplate.fields)}
+              outOfSync={!documentMatchesTemplate(editor, activeTemplate.fields, activeTemplate)}
               onApplyTemplateChanges={handleApplyTemplateChanges}
             />
           )}

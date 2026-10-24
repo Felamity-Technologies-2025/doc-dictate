@@ -1,5 +1,7 @@
 import os
 import logging
+import socket
+from urllib.parse import urlsplit
 from flask import Flask, jsonify
 from flask_cors import CORS
 from config import Config
@@ -70,4 +72,18 @@ if __name__ == '__main__':
     port = int(os.getenv('FLASK_PORT', 5000))
     host = os.getenv('HOST', '0.0.0.0')
     logger.info(f"Starting Audio_Transcription Flask backend on http://{host}:{port}")
+    if Config.LLM_CLIENT == 'ragsuite':
+        logger.info(f"LLM client: RAGSUITE | model: {Config.RAGSUITE_MODEL_ID or '(whichever is loaded in RAGSUITE)'} "
+                    f"| endpoint: {Config.RAGSUITE_ENDPOINT}")
+        try:
+            socket.create_connection((urlsplit(Config.RAGSUITE_ENDPOINT).hostname,
+                                      urlsplit(Config.RAGSUITE_ENDPOINT).port or 80), timeout=2).close()
+            logger.info("RAGSUITE is reachable")
+        except OSError:
+            logger.warning("RAGSUITE is NOT running - open the RAGSUITE app before extracting headings")
+    elif Config.LLM_CLIENT == 'django':
+        logger.info(f"LLM client: Django gateway (djangoLLM_client) | provider: {Config.DJANGO_LLM_PROVIDER} "
+                    f"| model: {Config.DJANGO_LLM_MODEL}")
+    else:
+        logger.warning(f"Unknown LLM_CLIENT '{Config.LLM_CLIENT}' - use 'ragsuite' or 'django'")
     app.run(host=host, port=port, debug=False)

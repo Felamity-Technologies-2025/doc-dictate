@@ -1,21 +1,38 @@
 """
-LLM-based structure extraction for uploaded PDF templates.
+LLM-based structure extraction for uploaded PDF and DOCX templates.
 
 The LLM is used only to identify a document's static headings / field labels
 (no embeddings, vector stores or retrieval). Its JSON answer is validated and
 normalized here before anything is stored, and filled-in values are stripped.
 """
+import io
 import json
 import logging
 import re
 import tempfile
 import threading
-from dataclasses import dataclass
+import zipfile
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+from docx import Document as DocxDocument
+from docx.opc.exceptions import PackageNotFoundError
+from docx.table import Table
+from docx.text.paragraph import Paragraph
+from lxml.etree import XMLSyntaxError
 
 from config import Config
 from djangoLLM_client import DjangoLLMClient
+from ragsuite_client import RagsuiteCompatClient
 from services.pdf_service import PdfContent, read_pdf, render_pages_to_images
+from services.template_layout_service import (
+    TemplateLayout,
+    crop_pdf_regions,
+    docx_layout,
+    docx_text_for_llm,
+    pdf_layout,
+    place_fields,
+)
 from services.template_service import FIELD_TYPES, MAX_HEADING_LENGTH
 
 logger = logging.getLogger(__name__)
@@ -47,10 +64,12 @@ Rules:
 8. template_name: a short generic name for this kind of document (e.g. "Leave Letter", "Legal Opinion"). It must not contain any names, places or dates from the document.
 9. Tables: when headings are the column headers of a table (a ruled or aligned grid whose header row is followed by rows of values, e.g. "Sl.No. | Date | Description | Remarks"), output each column header as its own entry (field_type "field"), in left-to-right order, directly after the heading that introduces the table, and give all columns of that table the same integer "table" id (1 for the first table in the document, 2 for the next, ...). Rule lines made of "=" or "-" are not headings. Headings that are not table column headers, and single-column layouts, get "table": null. A table has at least two columns. Never put the cell values of the table rows in the output.
 10. Placement: for each heading give "align", the horizontal position of that heading/label (and its value) on the page: "right" when it sits against the right margin (e.g. a date or signature line such as "Advocate"), "center" when it is centred on the page (e.g. a title like "TO WHOMSOEVER IT MAY CONCERN"), otherwise "left". Judge this from where the text actually is on the page, not from habit.
-11. Respond with a single valid JSON object and nothing else - no Markdown, no code fences, no commentary.
+11. Page and position: for each heading give "page" (the 1-based page it is on; pages are marked "--- Page N ---" in the text, attached page images are numbered as stated) and "y" (its vertical position on that page as a fraction: 0 = top edge, 1 = bottom edge).
+12. Pictures: ONLY for attached page images, list every logo, emblem, banner, photo, signature image or seal in "images" with its page and its bounding box as fractions of the page (x, y = top-left corner, w, h = size; 0..1). Do not list text, rule lines or the page itself. Use an empty list when there are none or when no page images are attached.
+13. Respond with a single valid JSON object and nothing else - no Markdown, no code fences, no commentary.
 
 JSON schema:
-{"template_name": string, "document_type": string, "fields": [{"heading": string, "field_type": "field" | "section" | "paragraph", "order": integer starting at 1, "level": integer >= 1, "parent_order": integer | null, "table": integer | null, "align": "left" | "center" | "right"}]}"""
+{"template_name": string, "document_type": string, "fields": [{"heading": string, "field_type": "field" | "section" | "paragraph", "order": integer starting at 1, "level": integer >= 1, "parent_order": integer | null, "table": integer | null, "align": "left" | "center" | "right", "page": integer, "y": number}], "images": [{"page": integer, "x": number, "y": number, "w": number, "h": number}]}"""
 
 
 class ExtractionError(Exception):
@@ -66,9 +85,13 @@ class ExtractionError(Exception):
 class ExtractionResult:
     template_name: str
     document_type: Optional[str]
-    fields: List[Dict]  # {heading, field_type, parent_index}
+    fields: List[Dict]  # {heading, field_type, parent_index, table_key, align, page, pos_y}
     method: str  # 'text' | 'vision' | 'text+vision'
-    page_count: int
+    page_count: Optional[int]
+    source_type: str = 'pdf'
+    # Page geometry {count, width, height} (points) and pictures with their placement
+    pages: Optional[Dict] = None
+    images: List = field(default_factory=list)
 
 
 _client_lock = threading.Lock()
@@ -76,11 +99,16 @@ _client: Optional[DjangoLLMClient] = None
 
 
 def get_llm_client() -> DjangoLLMClient:
-    """Shared gateway client so the auth token is reused across requests."""
+    """Shared client (selected by Config.LLM_CLIENT) so the gateway auth token is reused across requests."""
     global _client
     with _client_lock:
         if _client is None:
-            _client = DjangoLLMClient()
+            if Config.LLM_CLIENT == 'ragsuite':
+                _client = RagsuiteCompatClient(Config.RAGSUITE_ENDPOINT, Config.RAGSUITE_MODEL_ID)
+            elif Config.LLM_CLIENT == 'django':
+                _client = DjangoLLMClient()
+            else:
+                raise ExtractionError(f"Unknown LLM_CLIENT '{Config.LLM_CLIENT}'; use 'ragsuite' or 'django'.", 503)
         return _client
 
 
@@ -138,7 +166,11 @@ def parse_llm_json(text: str) -> Dict:
         try:
             data = json.loads(candidate[start:end + 1])
         except json.JSONDecodeError:
-            raise ExtractionError('The LLM did not return valid JSON. Please try again.', 502)
+            # A complete object followed by stray text, e.g. an extra closing brace
+            try:
+                data, _ = json.JSONDecoder().raw_decode(candidate, start)
+            except json.JSONDecodeError:
+                raise ExtractionError('The LLM did not return valid JSON. Please try again.', 502)
     if not isinstance(data, dict):
         raise ExtractionError('The LLM response had an unexpected structure.', 502)
     return data
@@ -162,6 +194,35 @@ def _as_int(value) -> Optional[int]:
     if isinstance(value, str) and value.strip().lstrip('-').isdigit():
         return int(value.strip())
     return None
+
+
+def _as_fraction(value) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        try:
+            value = float(value.strip())
+        except ValueError:
+            return None
+    if isinstance(value, (int, float)) and 0 <= value <= 1:
+        return float(value)
+    return None
+
+
+def _apply_layout(normalized: Dict, layout: TemplateLayout) -> Dict:
+    """Place the fields on their pages and keep only pages that hold a heading or a picture."""
+    fields = normalized['fields']
+    place_fields(fields, layout)
+    for item in fields:
+        item.pop('llm_page', None)
+        item.pop('llm_y', None)
+    used = {f['page'] for f in fields} | {image.page for image in layout.images}
+    images = [image for image in layout.images if image.page in used]
+    return {
+        'pages': {'count': len(used), 'numbers': sorted(used),
+                  'width': round(layout.page_width, 2), 'height': round(layout.page_height, 2)},
+        'images': images,
+    }
 
 
 def clean_extracted_heading(raw) -> Optional[str]:
@@ -205,6 +266,8 @@ def normalize_extraction(data: Dict) -> Dict:
             'parent_order': _as_int(raw.get('parent_order')),
             'table': _as_int(raw.get('table')),
             'align': str(raw.get('align') or '').strip().lower(),
+            'llm_page': _as_int(raw.get('page')),
+            'llm_y': _as_fraction(raw.get('y')),
         })
 
     items.sort(key=lambda item: (item['order'], item['position']))
@@ -251,18 +314,29 @@ def normalize_extraction(data: Dict) -> Dict:
         order_to_index.setdefault(item['order'], index)
         fields.append({'heading': item['heading'], 'field_type': item['field_type'], 'parent_index': parent_index,
                        'table_key': item.get('table_key'),
-                       'align': item['align'] if item['align'] in ('center', 'right') else None})
+                       'align': item['align'] if item['align'] in ('center', 'right') else None,
+                       'llm_page': item['llm_page'], 'llm_y': item['llm_y']})
 
     name = data.get('template_name')
     name = ' '.join(name.split())[:120] if isinstance(name, str) and name.strip() else ''
     doc_type = data.get('document_type')
     doc_type = ' '.join(doc_type.split())[:120] if isinstance(doc_type, str) and doc_type.strip() else None
-    return {'template_name': name, 'document_type': doc_type, 'fields': fields}
+    regions = []
+    for raw in data.get('images') if isinstance(data.get('images'), list) else []:
+        if not isinstance(raw, dict):
+            continue
+        page = _as_int(raw.get('page'))
+        box = [_as_fraction(raw.get(key)) for key in ('x', 'y', 'w', 'h')]
+        if page and all(v is not None for v in box) and box[2] > 0.01 and box[3] > 0.01:
+            x, y, w, h = box
+            regions.append({'page': page, 'x': x, 'y': y, 'w': min(w, 1 - x), 'h': min(h, 1 - y)})
+    return {'template_name': name, 'document_type': doc_type, 'fields': fields, 'regions': regions}
 
 
 # ------------------------------------------------------------------ extraction
 
-def _build_user_prompt(filename: str, pdf: PdfContent, text: str, truncated: bool, image_count: int) -> str:
+def _build_user_prompt(filename: str, pdf: PdfContent, text: str, truncated: bool, image_count: int,
+                       image_pages: Optional[List[int]] = None) -> str:
     lines = [f'Extract the template structure of this document (file: "{filename}", {pdf.page_count} page(s)).']
     if text:
         lines.append('Text extracted from the PDF follows between <document> tags.')
@@ -270,6 +344,8 @@ def _build_user_prompt(filename: str, pdf: PdfContent, text: str, truncated: boo
             lines.append('The text was truncated because the document is long; extract structure from what is given.')
     if image_count:
         lines.append(f'{image_count} page image(s) are attached for pages without a text layer (scanned). Read them as part of the document.')
+        if image_pages:
+            lines.append('The attached images are, in order, page(s) ' + ', '.join(str(p) for p in image_pages) + '.')
     lines.append('Return the JSON object only.')
     if text:
         lines.append(f'<document>\n{text}\n</document>')
@@ -303,7 +379,9 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
                 with tempfile.TemporaryDirectory(prefix='template_ocr_') as tmp_dir:
                     images = render_pages_to_images(pdf_bytes, pdf.scanned_pages, tmp_dir,
                                                     Config.TEMPLATE_OCR_MAX_PAGES, dpi=dpi)
-                    user = {'role': 'user', 'content': _build_user_prompt(filename, pdf, text, truncated, len(images))}
+                    image_pages = [i + 1 for i in pdf.scanned_pages[:len(images)]]
+                    user = {'role': 'user', 'content': _build_user_prompt(filename, pdf, text, truncated, len(images),
+                                                                          image_pages)}
                     logger.info("Template extraction via vision model: %s page image(s) at %s dpi, %s text page(s) (attempt %s)",
                                 len(images), dpi, pdf.text_page_count, attempt)
                     response = client.query_with_image(
@@ -329,10 +407,106 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
             method = 'text'
 
     normalized = normalize_extraction(parse_llm_json(_response_text(response)))
+    placement = {'pages': None, 'images': []}
+    try:
+        layout = pdf_layout(pdf_bytes, Config.TEMPLATE_PDF_MAX_PAGES)
+        crop_pdf_regions(pdf_bytes, layout, normalized['regions'])
+        placement = _apply_layout(normalized, layout)
+    except Exception:
+        # Layout is an enhancement: the headings are still usable without it
+        logger.warning("Template page layout could not be read; using headings only", exc_info=True)
+    for item in normalized['fields']:
+        item.pop('llm_page', None)
+        item.pop('llm_y', None)
     return ExtractionResult(
         template_name=normalized['template_name'],
         document_type=normalized['document_type'],
         fields=normalized['fields'],
         method=method,
         page_count=pdf.page_count,
+        pages=placement['pages'],
+        images=placement['images'],
+    )
+
+
+def extract_template_structure_from_docx(docx_bytes: bytes, filename: str,
+                                         client: Optional[DjangoLLMClient] = None) -> ExtractionResult:
+    """Extract reusable template headings from DOCX text and table contents."""
+    try:
+        document = DocxDocument(io.BytesIO(docx_bytes))
+    except (PackageNotFoundError, zipfile.BadZipFile, XMLSyntaxError, KeyError, ValueError) as exc:
+        raise ExtractionError('The uploaded DOCX is invalid or could not be read.', 422) from exc
+
+    layout = None
+    try:
+        layout = docx_layout(document)
+        text = docx_text_for_llm(layout)
+    except Exception:
+        logger.warning("DOCX page layout could not be read; using plain text", exc_info=True)
+        content = []
+        for block in document.iter_inner_content():
+            if isinstance(block, Paragraph):
+                if block.text.strip():
+                    content.append(block.text.strip())
+            elif isinstance(block, Table):
+                for row in block.rows:
+                    cells = [cell.text.strip().replace('\n', ' / ') for cell in row.cells]
+                    if any(cells):
+                        content.append(' | '.join(cells))
+        text = '\n'.join(content)
+    if not text.strip():
+        raise ExtractionError('No readable content was found in the DOCX.', 422)
+
+    truncated = len(text) > Config.LLM_MAX_INPUT_CHARS
+    if truncated:
+        text = text[:Config.LLM_MAX_INPUT_CHARS]
+
+    client = client or get_llm_client()
+    if not client.is_configured:
+        raise ExtractionError(
+            'The LLM gateway is not configured. Set DJANGO_LLM_EMAIL and DJANGO_LLM_OTP in Backend/.env.', 503
+        )
+
+    prompt_lines = [
+        f'Extract the template structure of this DOCX document (file: "{filename}").',
+        'Text extracted from the DOCX follows between <document> tags. Page breaks are marked "--- Page N ---"; '
+        'lines starting with [center] or [right] are centred / right-aligned in the document (the tag is not part of the text).',
+    ]
+    if truncated:
+        prompt_lines.append('The text was truncated because the document is long; extract structure from what is given.')
+    prompt_lines.extend(['Return the JSON object only.', f'<document>\n{text}\n</document>'])
+    user = {'role': 'user', 'content': '\n'.join(prompt_lines)}
+    system = {'role': 'system', 'content': EXTRACTION_SYSTEM_PROMPT}
+
+    with _client_lock:
+        response = None
+        for attempt in range(2):
+            response = client.query_llm(
+                Config.DJANGO_LLM_PROVIDER, Config.DJANGO_LLM_MODEL,
+                [system, user], complexity_score=0.5,
+            )
+            if not _is_transient_failure(response):
+                break
+            logger.warning("LLM gateway call failed transiently (%s); retrying",
+                           response.get('error') or response.get('status_code'))
+
+    normalized = normalize_extraction(parse_llm_json(_response_text(response)))
+    placement = {'pages': None, 'images': []}
+    if layout is not None:
+        try:
+            placement = _apply_layout(normalized, layout)
+        except Exception:
+            logger.warning("DOCX placement failed; using headings only", exc_info=True)
+    for item in normalized['fields']:
+        item.pop('llm_page', None)
+        item.pop('llm_y', None)
+    return ExtractionResult(
+        template_name=normalized['template_name'],
+        document_type=normalized['document_type'],
+        fields=normalized['fields'],
+        method='text',
+        page_count=placement['pages']['count'] if placement['pages'] else None,
+        source_type='docx',
+        pages=placement['pages'],
+        images=placement['images'],
     )

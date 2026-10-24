@@ -54,6 +54,18 @@ def make_text_pdf(text: str) -> bytes:
     return data
 
 
+def make_docx(text: str) -> bytes:
+    doc = DocxDocument()
+    for paragraph in text.splitlines():
+        doc.add_paragraph(paragraph)
+    table = doc.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = 'Date'
+    table.cell(0, 1).text = 'Description'
+    stream = io.BytesIO()
+    doc.save(stream)
+    return stream.getvalue()
+
+
 def make_scanned_pdf(text: str) -> bytes:
     src = pymupdf.open(stream=make_text_pdf(text), filetype='pdf')
     out = pymupdf.open()
@@ -151,6 +163,11 @@ class NormalizationTests(unittest.TestCase):
         with self.assertRaises(extraction.ExtractionError):
             extraction.normalize_extraction({'fields': 'nope'})
 
+    def test_json_with_trailing_brace(self):
+        # Seen from RAGSUITE: a complete object followed by an extra closing brace
+        self.assertEqual(extraction.parse_llm_json('{"fields": [{"heading": "A"}]}}'),
+                         {'fields': [{'heading': 'A'}]})
+
 
 class UploadTests(TempDbTestCase):
     def test_upload_extracts_structure_only(self):
@@ -178,6 +195,31 @@ class UploadTests(TempDbTestCase):
         self.assertEqual(len(image_paths), 1)
         self.assertFalse(any(os.path.exists(p) for p in image_paths), 'temporary page images must be removed')
 
+    def test_docx_upload_extracts_paragraphs_and_tables(self):
+        docx_bytes = make_docx(LETTER_TEXT)
+        llm = mock_client()
+        with mock.patch.object(extraction, 'get_llm_client', return_value=llm):
+            resp = self.client.post(
+                '/api/templates/upload',
+                data={'file': (io.BytesIO(docx_bytes), 'leave.docx')},
+                content_type='multipart/form-data',
+            )
+        self.assertEqual(resp.status_code, 201, resp.get_json())
+        body = resp.get_json()
+        self.assertEqual(body['extraction']['source_type'], 'docx')
+        self.assertEqual(body['extraction']['page_count'], 1)
+        self.assertEqual(body['extraction']['method'], 'text')
+        sent = json.dumps(llm.query_llm.call_args.args[2])
+        self.assertIn('Giri Nadhan', sent)
+        self.assertIn('Date | Description', sent)
+        llm.query_with_image.assert_not_called()
+
+    def test_invalid_docx_is_rejected(self):
+        resp, llm = self.upload(b'not a DOCX file', filename='invalid.docx')
+        self.assertEqual(resp.status_code, 422)
+        self.assertIn('DOCX is invalid', resp.get_json()['error'])
+        llm.query_llm.assert_not_called()
+
     def test_template_name_override(self):
         resp, _ = self.upload(make_text_pdf(LETTER_TEXT), template_name='My Leave Form')
         self.assertEqual(resp.get_json()['template']['template_name'], 'My Leave Form')
@@ -185,6 +227,7 @@ class UploadTests(TempDbTestCase):
     def test_rejects_non_pdf(self):
         resp, llm = self.upload(b'plain text', filename='notes.txt')
         self.assertEqual(resp.status_code, 400)
+        self.assertIn('PDF and DOCX', resp.get_json()['error'])
         resp, llm = self.upload(b'plain text pretending', filename='fake.pdf')
         self.assertEqual(resp.status_code, 422)
         self.assertIn('not a valid PDF', resp.get_json()['error'])
