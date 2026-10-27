@@ -44,7 +44,6 @@ import { TableDialog } from './components/editor/TableDialog';
 import { FindReplaceModal } from './components/editor/FindReplaceModal';
 import { TemplatesModal } from './components/templates/TemplatesModal';
 import { TemplateFieldsModal } from './components/templates/TemplateFieldsModal';
-import { TemplateBar } from './components/templates/TemplateBar';
 
 import { useDictation } from './hooks/useDictation';
 import { ApiService } from './services/api';
@@ -381,33 +380,6 @@ export default function App() {
     navigator.clipboard?.writeText(text);
   };
 
-  // Download plain text
-  const handleDownloadTxt = () => {
-    if (!editor) return;
-    const text = editor.getText();
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${documentTitle || 'Document'}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Download HTML
-  const handleDownloadHtml = () => {
-    if (!editor) return;
-    const html = editor.getHTML();
-    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${documentTitle}</title><style>body{background:#0b1120;color:#e2e8f0;font-family:-apple-system,sans-serif;margin:40px;line-height:1.6;}</style></head><body>${html}</body></html>`;
-    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${documentTitle || 'Document'}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   // Keyboard shortcut listener (Ctrl+S for save, Ctrl+F for find)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -442,12 +414,14 @@ export default function App() {
           dictationSettings={dictationSettings}
           onOpenDictationSettings={() => setIsSettingsModalOpen(true)}
           onOpenDocuments={() => setIsDocsModalOpen(true)}
-          onOpenAudioUpload={() => setIsUploadModalOpen(true)}
-          onCopyDocumentText={handleCopyDocumentText}
-          onDownloadTxt={handleDownloadTxt}
-          onDownloadHtml={handleDownloadHtml}
           onOpenTemplates={() => setIsTemplatesModalOpen(true)}
           onExportDocument={handleExportDocument}
+          exportingFormat={exportingFormat}
+          onUpdateDictationLanguage={(lang) =>
+            setDictationSettings((prev) => ({ ...prev, language: lang }))
+          }
+          dictationStatus={dictationStatus}
+          onToggleDictation={toggleDictation}
         />
 
         {/* Template / export error banner */}
@@ -482,50 +456,43 @@ export default function App() {
           </div>
         )}
 
-        {/* Document Work Area: Toolbar & Editor Card */}
-        {/* Scrolls as a whole on short screens (landscape phones) so the editor keeps a usable height */}
-        <div className="flex-1 min-h-0 flex flex-col p-2.5 sm:p-4 md:p-5 gap-2.5 sm:gap-3.5 overflow-y-auto">
-          {/* Integrated RAGSUITE Dark Toolbar */}
+        {/* Document Work Area: Edit Tools Side Bar & Editor Card */}
+        {/* Phones: scrolls as a whole so the editor keeps a usable height; md+: side bar and document scroll separately */}
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row p-1.5 sm:p-2 gap-1.5 sm:gap-2 overflow-y-auto md:overflow-hidden">
+          {/* Integrated RAGSUITE Edit Tools Side Bar */}
           <RagsuiteToolbar
             editor={editor}
-            dictationStatus={dictationStatus}
-            dictationSettings={dictationSettings}
-            onToggleDictation={toggleDictation}
-            onOpenDictationSettings={() => setIsSettingsModalOpen(true)}
-            onOpenAudioUpload={() => setIsUploadModalOpen(true)}
-            onUpdateDictationLanguage={(lang) =>
-              setDictationSettings((prev) => ({ ...prev, language: lang }))
-            }
             onOpenTableDialog={() => setIsTableDialogOpen(true)}
             onOpenFindReplace={() => setIsFindReplaceOpen(true)}
+            onAddField={activeTemplate ? () => setFieldsModal({ open: true, focusAdd: true }) : undefined}
+            onManageFields={activeTemplate ? () => setFieldsModal({ open: true, focusAdd: false }) : undefined}
           />
 
-          {/* Template controls for documents created from a template */}
-          {activeTemplate && (
-            <TemplateBar
-              template={activeTemplate}
-              activeField={getActiveTemplateField(editor)}
-              isDictating={dictationStatus === 'listening' || dictationStatus === 'transcribing'}
-              onAddField={() => setFieldsModal({ open: true, focusAdd: true })}
-              onManageFields={() => setFieldsModal({ open: true, focusAdd: false })}
-              onExport={handleExportDocument}
-              exportingFormat={exportingFormat}
-              outOfSync={!documentMatchesTemplate(editor, activeTemplate.fields, activeTemplate)}
-              onApplyTemplateChanges={handleApplyTemplateChanges}
+          {/* Document column: template controls + editor card */}
+          <div className="flex-1 min-w-0 flex flex-col gap-2.5 sm:gap-3.5 md:min-h-0 md:overflow-y-auto">
+            {/* RAGSUITE Main Document Card */}
+            <RagsuiteEditorCard
+              editor={editor}
+              documentTitle={documentTitle}
+              wordCount={wordCount}
+              charCount={charCount}
+              layout={layout}
+              onClearDocument={handleClearDocument}
+              onCopyText={handleCopyDocumentText}
+              onPreview={() => setIsPreviewOpen(true)}
+              templateControls={
+                activeTemplate
+                  ? {
+                      fieldsCount: activeTemplate.fields.length,
+                      activeField: getActiveTemplateField(editor),
+                      isDictating: dictationStatus === 'listening' || dictationStatus === 'transcribing',
+                      outOfSync: !documentMatchesTemplate(editor, activeTemplate.fields, activeTemplate),
+                      onApplyTemplateChanges: handleApplyTemplateChanges,
+                    }
+                  : undefined
+              }
             />
-          )}
-
-          {/* RAGSUITE Main Document Card */}
-          <RagsuiteEditorCard
-            editor={editor}
-            documentTitle={documentTitle}
-            wordCount={wordCount}
-            charCount={charCount}
-            layout={layout}
-            onClearDocument={handleClearDocument}
-            onCopyText={handleCopyDocumentText}
-            onPreview={() => setIsPreviewOpen(true)}
-          />
+          </div>
         </div>
 
       </main>

@@ -55,12 +55,6 @@ python app.py
 ```
 The server starts at `http://localhost:5000`.
 
-### 5. Run Automated Tests
-```bash
-python -m unittest discover -s tests
-```
-`tests/test_templates.py` mocks the LLM gateway and uses a temporary database.
-
 ## API Endpoints
 
 | Method | Endpoint | Description |

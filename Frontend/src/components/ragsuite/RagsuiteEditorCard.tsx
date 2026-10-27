@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { EditorContent, type Editor } from '@tiptap/react';
 import {
   Bot,
@@ -11,8 +11,19 @@ import {
   Minimize2,
   Layers,
   Eye,
+  RefreshCw,
+  Mic,
 } from 'lucide-react';
 import { PageLayoutConfig } from '../../types';
+import type { TemplateFieldAttrs } from '../../utils/templateField';
+
+interface TemplateControls {
+  fieldsCount: number;
+  activeField: TemplateFieldAttrs | null;
+  isDictating: boolean;
+  outOfSync: boolean;
+  onApplyTemplateChanges: () => void;
+}
 
 interface RagsuiteEditorCardProps {
   editor: Editor | null;
@@ -23,6 +34,7 @@ interface RagsuiteEditorCardProps {
   onClearDocument: () => void;
   onCopyText: () => void;
   onPreview: () => void;
+  templateControls?: TemplateControls;
 }
 
 export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
@@ -34,6 +46,7 @@ export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
   onClearDocument,
   onCopyText,
   onPreview,
+  templateControls,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isPrintLayout, setIsPrintLayout] = useState(true);
@@ -47,7 +60,7 @@ export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
   const zoomScale = layout.zoom / 100;
 
   return (
-    <div className="flex-1 min-h-[24rem] flex flex-col min-w-0 overflow-y-auto sm:px-1 pb-2 sm:pb-4">
+    <div className="flex-1 min-h-[24rem] flex flex-col min-w-0 overflow-y-auto">
       {/* RAGSUITE Main Content Card */}
       <div className="bg-[#131b2e] border border-[#1e2b42] rounded-xl shadow-xl flex flex-col min-h-[420px] sm:min-h-[560px] shrink-0 overflow-hidden transition-all">
         {/* Card Header matching RAGSUITE card top row */}
@@ -60,13 +73,61 @@ export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
             <span className="text-xs font-semibold text-white tracking-wide truncate">
               {documentTitle || 'Document Editor'}
             </span>
-            <span className="text-[11px] text-[#7082a4] hidden sm:inline shrink-0">
+            <span className="text-[11px] text-[#7082a4] hidden sm:inline shrink-0 whitespace-nowrap">
               • {wordCount} words • {charCount} characters
             </span>
+            {templateControls && (
+              <>
+                <span className="text-[11px] text-[#7082a4] hidden md:inline shrink-0 whitespace-nowrap">
+                  • {templateControls.fieldsCount} fields
+                </span>
+                <span
+                  className={`flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full border min-w-0 shrink ${
+                    templateControls.isDictating
+                      ? 'text-red-300 border-red-500/40 bg-red-500/10'
+                      : 'text-blue-300 border-blue-500/30 bg-blue-500/10'
+                  }`}
+                  title={
+                    templateControls.activeField
+                      ? `${templateControls.fieldsCount} fields • ${
+                          templateControls.isDictating ? 'Dictating into' : 'Active field'
+                        }: ${templateControls.activeField.heading}`
+                      : `${templateControls.fieldsCount} fields • Click a field to start typing or dictating`
+                  }
+                >
+                  <Mic className="w-3 h-3 shrink-0" />
+                  <span className="truncate">
+                    {templateControls.activeField ? (
+                      <>
+                        <span className="hidden lg:inline">
+                          {templateControls.isDictating ? 'Dictating into' : 'Active field'}:{' '}
+                        </span>
+                        <strong className="font-semibold">{templateControls.activeField.heading}</strong>
+                      </>
+                    ) : (
+                      <>
+                        <span className="hidden xl:inline">Click a field to start typing or dictating</span>
+                        <span className="xl:hidden">No active field</span>
+                      </>
+                    )}
+                  </span>
+                </span>
+              </>
+            )}
           </div>
 
           {/* Right Action Icons matching RAGSUITE Assistant card header */}
           <div className="flex items-center gap-1 shrink-0">
+            {templateControls?.outOfSync && (
+              <button
+                onClick={templateControls.onApplyTemplateChanges}
+                className="flex items-center gap-1 text-[11px] text-amber-300 border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 px-2 py-1 rounded-md cursor-pointer"
+                title="This document's fields differ from the template's current fields — apply template changes"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span className="hidden md:inline">Apply template changes</span>
+              </button>
+            )}
             {/* Toggle Print vs Dark Card View */}
             <button
               onClick={() => setIsPrintLayout(!isPrintLayout)}
@@ -89,15 +150,6 @@ export const RagsuiteEditorCard: React.FC<RagsuiteEditorCardProps> = ({
             >
               <Eye className="w-3.5 h-3.5" />
               <span className="hidden md:inline">Preview</span>
-            </button>
-
-            {/* Copy Button */}
-            <button
-              onClick={handleCopy}
-              className="p-1.5 text-[#8da0bd] hover:text-white hover:bg-[#1a2844] rounded-lg transition-colors cursor-pointer"
-              title="Copy text"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
 
             {/* Clear Document Button (Red trash icon matching RAGSUITE) */}

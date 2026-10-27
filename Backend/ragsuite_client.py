@@ -2,10 +2,14 @@
 import requests
 import json
 import logging
+import os
+import re
 import uuid
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
+
+SOURCE_NOTE = re.compile(r"^(?:\s*Data fetching from the source:[^\n]*\n)+\s*")
 
 class RagsuiteClient:
     def __init__(self, endpoint="http://localhost:5641/query-data/HOME"):
@@ -150,7 +154,19 @@ class RagsuiteCompatClient(RagsuiteClient):
         except (requests.exceptions.RequestException, ValueError, AttributeError) as e:
             return f"RAGSUITE could not load model '{self.model_id}': {e}"
 
-    def query_with_image(self, provider, model, messages, image_paths, **kwargs):
-        # The RAGSUITE payload has no image input; sending only the text would let
-        # the model guess the structure of a scanned page it never saw.
-        return {"error": "RAGSUITE does not accept page images. Scanned PDFs need LLM_CLIENT=django"}
+    def query_with_image(self, provider, model, messages, image_paths, stream=False, complexity_score=None,
+                         **generation_params):
+        """
+        Same as query_llm, with page images attached the way RAGSUITE's chat attaches files:
+        their absolute paths under current_files[chat_index]["RAGSUITE_CACHE"], read by RAGSUITE
+        from disk (it runs on this machine). The files must exist until the call returns.
+        """
+        chat_index = str(uuid.uuid4())  # a fresh chat, so no other attachments ride along
+        generation_params["chat_index"] = chat_index
+        generation_params["current_files"] = {
+            chat_index: {"RAGSUITE_CACHE": [os.path.abspath(path) for path in image_paths]}}
+        result = self.query_llm(provider, model, messages, **generation_params)
+        if isinstance(result.get("content"), str):
+            # RAGSUITE starts the answer with a "Data fetching from the source: <path>" line per file
+            result["content"] = SOURCE_NOTE.sub("", result["content"])
+        return result

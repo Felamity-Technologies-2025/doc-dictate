@@ -4,19 +4,19 @@ import {
   ChevronDown,
   FileText,
   ChevronRight,
-  History,
   Settings as SettingsIcon,
   Check,
   CloudUpload,
   AlertCircle,
-  Share2,
-  Copy,
   Download,
   Plus,
   LayoutTemplate,
   FileDown,
+  Loader2,
+  Mic,
 } from 'lucide-react';
-import { DictationSettings, ExportFormat } from '../../types';
+import { DictationSettings, DictationStatus, ExportFormat } from '../../types';
+import { SUPPORTED_LANGUAGES } from '../../utils/punctuation';
 
 interface RagsuiteTopBarProps {
   documentTitle: string;
@@ -27,12 +27,12 @@ interface RagsuiteTopBarProps {
   dictationSettings: DictationSettings;
   onOpenDictationSettings: () => void;
   onOpenDocuments: () => void;
-  onOpenAudioUpload: () => void;
-  onCopyDocumentText: () => void;
-  onDownloadTxt: () => void;
-  onDownloadHtml: () => void;
   onOpenTemplates: () => void;
   onExportDocument: (format: ExportFormat) => void;
+  exportingFormat: ExportFormat | null;
+  onUpdateDictationLanguage: (language: string) => void;
+  dictationStatus: DictationStatus;
+  onToggleDictation: () => void;
 }
 
 export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
@@ -44,15 +44,22 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
   dictationSettings,
   onOpenDictationSettings,
   onOpenDocuments,
-  onOpenAudioUpload,
-  onCopyDocumentText,
-  onDownloadTxt,
-  onDownloadHtml,
   onOpenTemplates,
   onExportDocument,
+  exportingFormat,
+  onUpdateDictationLanguage,
+  dictationStatus,
+  onToggleDictation,
 }) => {
-  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
+  const [dictationMenuOpen, setDictationMenuOpen] = useState(false);
+  const isRecording = dictationStatus === 'listening';
+  const isTranscribing = dictationStatus === 'transcribing';
+  const isRequesting = dictationStatus === 'requesting-permission';
+  const currentLang =
+    SUPPORTED_LANGUAGES.find((language) => language.code === dictationSettings.language) ??
+    SUPPORTED_LANGUAGES[0];
 
   return (
     <header className="min-h-14 bg-[#0b101e] border-b border-[#19243a] px-2.5 sm:px-4 py-2 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 sm:gap-x-3 gap-y-2 select-none shrink-0 z-30">
@@ -195,15 +202,6 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
 
       {/* Right Action Buttons */}
       <div className="flex items-center gap-0.5 sm:gap-2 shrink-0">
-        {/* History / Clock Icon */}
-        <button
-          onClick={onOpenDocuments}
-          className="p-2 text-[#8da0bd] hover:text-white hover:bg-[#162035] rounded-lg transition-colors cursor-pointer"
-          title="Document History (SQLite)"
-        >
-          <History className="w-4 h-4" />
-        </button>
-
         {/* Settings Gear Icon */}
         <button
           onClick={onOpenDictationSettings}
@@ -213,59 +211,141 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
           <SettingsIcon className="w-4 h-4" />
         </button>
 
-        {/* Share / Export Menu */}
+        {/* Primary Dictation Control */}
+        <div className="relative flex items-center">
+          <div
+            className={`flex items-stretch rounded-lg border transition-all ${
+              isRecording
+                ? 'bg-red-500/20 border-red-500/60 ring-2 ring-red-500/30'
+                : isTranscribing
+                ? 'bg-amber-500/20 border-amber-500/50'
+                : 'bg-[#18233a] hover:bg-[#1e2b47] border-[#253552]'
+            }`}
+          >
+            <button
+              onClick={onToggleDictation}
+              disabled={isRequesting}
+              className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 ${
+                isRecording
+                  ? 'text-red-400'
+                  : isTranscribing
+                  ? 'text-amber-400'
+                  : 'text-white hover:text-blue-400'
+              }`}
+              title={isRecording ? 'Click to stop dictating' : 'Click to start voice dictation'}
+            >
+              <Mic
+                className={`w-4 h-4 ${
+                  isRecording
+                    ? 'text-red-500 animate-pulse scale-110'
+                    : isTranscribing
+                    ? 'text-amber-400 animate-spin'
+                    : 'text-blue-400'
+                }`}
+              />
+              <span>
+                {isRecording
+                  ? 'Recording...'
+                  : isTranscribing
+                  ? 'Transcribing...'
+                  : isRequesting
+                  ? 'Starting...'
+                  : 'Dictate'}
+              </span>
+            </button>
+            <button
+              onClick={() => setDictationMenuOpen(!dictationMenuOpen)}
+              className="px-1.5 border-l border-[#253552] text-neutral-400 hover:text-white hover:bg-[#202f4e] cursor-pointer flex items-center justify-center transition-colors rounded-r-lg"
+              title="Dictation options"
+              aria-haspopup="menu"
+              aria-expanded={dictationMenuOpen}
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {dictationMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setDictationMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-1.5 w-64 max-w-[calc(100vw-1.5rem)] bg-[#121929] border border-[#23334d] rounded-lg shadow-2xl py-1.5 z-40 text-xs text-neutral-200">
+                <div className="px-3 py-1 border-b border-[#1e2c47] flex items-center justify-between text-neutral-400">
+                  <span className="font-semibold text-white">Voice Dictation</span>
+                  <span className="text-[10px] text-blue-400 uppercase font-mono">
+                    {dictationSettings.engine}
+                  </span>
+                </div>
+                <div className="px-3 py-1.5 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
+                  Language ({currentLang.label})
+                </div>
+                <div className="max-h-36 overflow-y-auto">
+                  {SUPPORTED_LANGUAGES.map((language) => (
+                    <button
+                      key={language.code}
+                      onClick={() => {
+                        onUpdateDictationLanguage(language.code);
+                        setDictationMenuOpen(false);
+                      }}
+                      className={`w-full px-3 py-1.5 flex items-center justify-between hover:bg-[#1a2842] text-left transition-colors ${
+                        dictationSettings.language === language.code
+                          ? 'text-blue-400 bg-blue-950/40 font-medium'
+                          : 'text-neutral-300'
+                      }`}
+                    >
+                      <span>
+                        {language.flag} {language.label}
+                      </span>
+                      {dictationSettings.language === language.code && (
+                        <Check className="w-3.5 h-3.5 text-blue-400" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <div className="border-t border-[#1e2c47] my-1" />
+                <button
+                  onClick={() => {
+                    setDictationMenuOpen(false);
+                    onOpenDictationSettings();
+                  }}
+                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] text-neutral-300 hover:text-white"
+                >
+                  <SettingsIcon className="w-3.5 h-3.5 text-neutral-400" />
+                  <span>Dictation Settings & Engines...</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Download Menu */}
         <div className="relative">
           <button
-            onClick={() => setShareMenuOpen(!shareMenuOpen)}
-            className="p-2 text-[#8da0bd] hover:text-white hover:bg-[#162035] rounded-lg transition-colors cursor-pointer"
-            title="Export Document"
+            onClick={() => setDownloadMenuOpen(!downloadMenuOpen)}
+            disabled={!!exportingFormat}
+            className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60"
+            title="Download or export document"
           >
-            <Share2 className="w-4 h-4" />
+            {exportingFormat ? (
+              <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+            ) : (
+              <Download className="w-3.5 h-3.5 text-blue-400" />
+            )}
+            <span>Download</span>
+            <ChevronDown className="w-3 h-3 text-neutral-400" />
           </button>
 
-          {shareMenuOpen && (
+          {downloadMenuOpen && (
             <>
-              <div className="fixed inset-0 z-30" onClick={() => setShareMenuOpen(false)} />
+              <div className="fixed inset-0 z-30" onClick={() => setDownloadMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#121929] border border-[#23334d] text-neutral-200 rounded-lg shadow-2xl py-1.5 z-40 text-xs">
-                <button
-                  onClick={() => {
-                    onCopyDocumentText();
-                    setShareMenuOpen(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
-                >
-                  <Copy className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>Copy Document Text</span>
-                </button>
-                <button
-                  onClick={() => {
-                    onDownloadTxt();
-                    setShareMenuOpen(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
-                >
-                  <Download className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>Export Plain Text (.txt)</span>
-                </button>
-                <button
-                  onClick={() => {
-                    onDownloadHtml();
-                    setShareMenuOpen(false);
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
-                >
-                  <Download className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>Export Web Page (.html)</span>
-                </button>
-                <div className="border-t border-[#1e2c47] my-1" />
                 {(['docx', 'pdf'] as ExportFormat[]).map((format) => (
                   <button
                     key={format}
+                    disabled={!!exportingFormat}
                     onClick={() => {
                       onExportDocument(format);
-                      setShareMenuOpen(false);
+                      setDownloadMenuOpen(false);
                     }}
-                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left"
+                    className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] transition-colors text-left disabled:opacity-60"
                   >
                     <FileDown className="w-3.5 h-3.5 text-blue-400" />
                     <span>Download as {format.toUpperCase()} (.{format})</span>
