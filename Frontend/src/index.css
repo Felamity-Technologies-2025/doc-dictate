@@ -57,28 +57,59 @@ body {
 }
 
 .ProseMirror h1 {
-  font-size: 1.5rem;
+  font-size: 1.65rem;
   font-weight: 700;
-  color: #60a5fa;
+  color: #0f4761;
   margin-top: 1.5rem;
   margin-bottom: 0.75rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
 }
 
 .ProseMirror h2 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #93c5fd;
+  font-size: 1.35rem;
+  font-weight: 650;
+  color: #0f4761;
   margin-top: 1.25rem;
   margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
 
 .ProseMirror h3 {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 600;
-  color: #cbd5e1;
+  color: #0f4761;
   margin-top: 1rem;
+  margin-bottom: 0.4rem;
+  line-height: 1.4;
+}
+
+.ProseMirror h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f4761;
+  margin-top: 0.85rem;
   margin-bottom: 0.35rem;
+  line-height: 1.45;
+}
+
+.ProseMirror h5 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f4761;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
+}
+
+.ProseMirror h6 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #0f4761;
+  margin-top: 0.65rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.5;
 }
 
 .ProseMirror ul {
@@ -270,6 +301,12 @@ body {
 
 /* White "paper" page (Word-like view): dark text on white */
 .paper-page .ProseMirror { color: #111827; }
+.paper-page .ProseMirror h1 { color: #0f4761; }
+.paper-page .ProseMirror h2 { color: #0f4761; }
+.paper-page .ProseMirror h3 { color: #0f4761; }
+.paper-page .ProseMirror h4 { color: #0f4761; }
+.paper-page .ProseMirror h5 { color: #0f4761; }
+.paper-page .ProseMirror h6 { color: #0f4761; }
 .paper-page .ProseMirror blockquote { color: #374151; }
 .paper-page .ProseMirror .template-field { color: #111827; }
 .paper-page .ProseMirror .template-field { border-left-color: #cbd5e1; }

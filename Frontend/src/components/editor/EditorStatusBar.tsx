@@ -48,12 +48,7 @@ export const EditorStatusBar: React.FC<EditorStatusBarProps> = ({
         {dictationStatus === 'listening' && (
           <span className="flex items-center gap-1 text-red-200 bg-red-800/60 px-2 py-0.5 rounded text-[10px] animate-pulse">
             <Mic className="w-3 h-3 text-red-300" />
-            <span>Voice Dictation Active ({dictationSettings.engine})</span>
-          </span>
-        )}
-        {dictationStatus === 'transcribing' && (
-          <span className="flex items-center gap-1 text-amber-200 bg-amber-800/60 px-2 py-0.5 rounded text-[10px]">
-            <span>Transcribing speech...</span>
+            <span>Voice Dictation Active (Browser WebSpeech)</span>
           </span>
         )}
       </div>

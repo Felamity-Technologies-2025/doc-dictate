@@ -116,7 +116,7 @@ export class BrowserSpeechManager {
 
   start(lang = 'en-US', continuous = true) {
     if (!isBrowserSpeechSupported()) {
-      this.onError('Web Speech API is not supported in this browser. Please use the Flask Backend engine or Google Chrome/Edge.');
+      this.onError('Web Speech API is not supported in this browser. Please use a supported browser such as Chrome or Edge.');
       return;
     }
 

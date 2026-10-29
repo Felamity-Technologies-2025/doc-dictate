@@ -50,9 +50,9 @@ export function labelText(heading: string, fieldType: string, inTable = false): 
 }
 
 const PLACEHOLDERS: Record<string, string> = {
-  field: '[Enter content here]',
-  section: '[Enter content here]',
-  paragraph: '[Enter letter content here]',
+  field: '[Enter content]',
+  section: '[Enter content]',
+  paragraph: '[Enter letter content]',
 };
 
 /** All template field nodes with their document positions, in order */

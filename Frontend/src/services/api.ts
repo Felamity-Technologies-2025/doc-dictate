@@ -1,6 +1,5 @@
 import {
   DocumentModel,
-  TranscriptionResponse,
   BackendHealth,
   ExportFormat,
   NewTemplateField,
@@ -8,6 +7,8 @@ import {
   TemplateModel,
   TemplateSummary,
   TemplateUploadResult,
+  AIModel,
+  EligibleModelsResponse,
 } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -32,37 +33,6 @@ export class ApiService {
     } catch {
       return null;
     }
-  }
-
-  /**
-   * Upload an audio blob/file for transcription to the Python Flask backend
-   */
-  static async transcribeAudio(
-    audioBlob: Blob,
-    filename = 'recording.webm',
-    language = 'en-US',
-    engine = 'google'
-  ): Promise<TranscriptionResponse> {
-    const formData = new FormData();
-    formData.append('audio', audioBlob, filename);
-    formData.append('language', language);
-    formData.append('engine', engine);
-
-    const response = await fetch(`${API_BASE}/api/transcribe`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await response.json().catch(() => ({
-      success: false,
-      error: `Server error HTTP ${response.status}`,
-    }));
-
-    if (!response.ok && !data.error) {
-      data.error = `HTTP error: ${response.status} ${response.statusText}`;
-    }
-
-    return data;
   }
 
   /**
@@ -281,6 +251,34 @@ export class ApiService {
       body: JSON.stringify(doc),
     });
     return data.document;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AI Model Selection (RAGSUITE)
+  // ---------------------------------------------------------------------------
+
+  /** Fetch the list of eligible AI models from RAGSUITE */
+  static async getEligibleModels(): Promise<AIModel[]> {
+    const response = await fetch(`${API_BASE}/api/eligible_models`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response, `Failed to fetch AI models (HTTP ${response.status})`));
+    }
+    const data: EligibleModelsResponse = await response.json();
+    const free = (data.free || []).map((m) => ({ ...m, tier: 'free' as const }));
+    const subscription = (data.subscription || []).map((m) => ({ ...m, tier: 'subscription' as const }));
+    return [...free, ...subscription];
+  }
+
+  /** Load / select an AI model in RAGSUITE for template extraction */
+  static async loadModel(model: { model_id: string; vendor: string; supports_vision: boolean }): Promise<{ message: string }> {
+    const data = await requestJson<{ message: string }>(`/api/models/load`, {
+      method: 'POST',
+      body: JSON.stringify(model),
+    });
+    return data;
   }
 }
 

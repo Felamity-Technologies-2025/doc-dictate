@@ -7,11 +7,9 @@ import {
   BrowserSpeechManager,
   AudioLevelAnalyzer,
 } from '../services/speechRecognition';
-import { ApiService } from '../services/api';
 
 export function useDictation(editor: Editor | null) {
   const [settings, setSettings] = useState<DictationSettings>({
-    engine: isBrowserSpeechSupported() ? 'browser' : 'flask',
     language: 'en-US',
     autoPunctuation: true,
     continuous: true,
@@ -25,8 +23,6 @@ export function useDictation(editor: Editor | null) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const levelAnalyzerRef = useRef<AudioLevelAnalyzer | null>(null);
   const browserManagerRef = useRef<BrowserSpeechManager | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
 
   // Cleanup helper
   const stopAudioStreams = useCallback(() => {
@@ -63,15 +59,6 @@ export function useDictation(editor: Editor | null) {
       browserManagerRef.current = null;
     }
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {
-        // Ignore
-      }
-      mediaRecorderRef.current = null;
-    }
-
     stopAudioStreams();
     setInterimText('');
     setStatus('idle');
@@ -100,83 +87,33 @@ export function useDictation(editor: Editor | null) {
         setAudioLevel(level);
       });
 
-      // 3. Start speech recognition according to selected engine
-      if (settings.engine === 'browser') {
-        if (!isBrowserSpeechSupported()) {
-          throw new Error(
-            'Browser Speech Recognition is not supported. Please choose Flask Backend engine in Dictate Settings.'
-          );
-        }
-
-        const manager = new BrowserSpeechManager(
-          (finalTranscript) => {
-            insertRecognizedText(finalTranscript);
-            setInterimText('');
-          },
-          (interimTranscript) => {
-            setInterimText(interimTranscript);
-          },
-          (err) => {
-            setErrorMessage(err);
-            setStatus('error');
-            stopAudioStreams();
-          },
-          (isListening) => {
-            setStatus(isListening ? 'listening' : 'idle');
-          }
+      // 3. Start browser-based speech recognition
+      if (!isBrowserSpeechSupported()) {
+        throw new Error(
+          'Web Speech API is not supported in this browser. Please use a supported browser such as Chrome or Edge.'
         );
-
-        browserManagerRef.current = manager;
-        manager.start(settings.language, settings.continuous);
-      } else {
-        // Flask Backend speech recognition using MediaRecorder audio capture
-        setStatus('listening');
-        audioChunksRef.current = [];
-
-        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : 'audio/ogg';
-
-        const recorder = new MediaRecorder(stream, { mimeType });
-        mediaRecorderRef.current = recorder;
-
-        recorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            audioChunksRef.current.push(e.data);
-          }
-        };
-
-        recorder.onstop = async () => {
-          if (audioChunksRef.current.length === 0) return;
-          setStatus('transcribing');
-          setInterimText('Transcribing audio via Python Flask backend...');
-
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          try {
-            const resp = await ApiService.transcribeAudio(
-              audioBlob,
-              'voice_dictation.webm',
-              settings.language,
-              'google'
-            );
-            if (resp.success && resp.text) {
-              insertRecognizedText(resp.text);
-            } else if (resp.error) {
-              setErrorMessage(resp.error);
-            }
-          } catch (e) {
-            setErrorMessage(`Backend transcription failed: ${e}`);
-          } finally {
-            setInterimText('');
-            setStatus('idle');
-            stopAudioStreams();
-          }
-        };
-
-        recorder.start(1000); // 1-second slices
       }
+
+      const manager = new BrowserSpeechManager(
+        (finalTranscript) => {
+          insertRecognizedText(finalTranscript);
+          setInterimText('');
+        },
+        (interimTranscript) => {
+          setInterimText(interimTranscript);
+        },
+        (err) => {
+          setErrorMessage(err);
+          setStatus('error');
+          stopAudioStreams();
+        },
+        (isListening) => {
+          setStatus(isListening ? 'listening' : 'idle');
+        }
+      );
+
+      browserManagerRef.current = manager;
+      manager.start(settings.language, settings.continuous);
     } catch (err: unknown) {
       stopAudioStreams();
       setStatus('error');
@@ -193,7 +130,7 @@ export function useDictation(editor: Editor | null) {
 
   // Toggle dictation
   const toggleDictation = useCallback(() => {
-    if (status === 'listening' || status === 'transcribing' || status === 'requesting-permission') {
+    if (status === 'listening' || status === 'requesting-permission') {
       stopDictation();
     } else {
       startDictation();
@@ -216,7 +153,6 @@ export function useDictation(editor: Editor | null) {
     interimText,
     audioLevel,
     isListening: status === 'listening',
-    isTranscribing: status === 'transcribing',
     toggleDictation,
     startDictation,
     stopDictation,

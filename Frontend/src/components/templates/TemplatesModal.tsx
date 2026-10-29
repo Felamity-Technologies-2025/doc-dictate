@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Cpu,
   FilePlus2,
   FileText,
   LayoutTemplate,
@@ -15,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { ApiService } from '../../services/api';
-import { TemplateModel, TemplateSummary } from '../../types';
+import { AIModel, TemplateModel, TemplateSummary } from '../../types';
 
 interface TemplatesModalProps {
   isOpen: boolean;
@@ -66,6 +67,15 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
+  // AI Model selection state
+  const [models, setModels] = useState<AIModel[]>([]);
+  const [selectedModel, setSelectedModel] = useState<AIModel | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelLoadingId, setModelLoadingId] = useState<string | null>(null);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+
   const loadTemplates = async () => {
     setIsLoading(true);
     setListError(null);
@@ -78,12 +88,58 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
     }
   };
 
+  const loadModels = async () => {
+    setModelsLoading(true);
+    setModelsError(null);
+    try {
+      const allModels = await ApiService.getEligibleModels();
+      setModels(allModels);
+    } catch (err) {
+      setModelsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const handleSelectModel = async (model: AIModel) => {
+    if (model.exceeded) return;
+    setModelLoadingId(model.model_id);
+    setModelsError(null);
+    try {
+      await ApiService.loadModel({
+        model_id: model.model_id,
+        vendor: model.provider,
+        supports_vision: model.supports_vision,
+      });
+      setSelectedModel(model);
+      setModelDropdownOpen(false);
+    } catch (err) {
+      setModelsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setModelLoadingId(null);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       loadTemplates();
+      loadModels();
       setExpanded({});
     }
   }, [isOpen]);
+
+  // Close model dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!modelLoadingId && modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
+        setModelDropdownOpen(false);
+      }
+    };
+    if (modelDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [modelDropdownOpen, modelLoadingId]);
 
   if (!isOpen) return null;
 
@@ -228,7 +284,8 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e2c47] bg-[#0c1222] shrink-0">
           <div className="flex items-center gap-2">
-            <LayoutTemplate className="w-5 h-5 text-blue-400" />
+            {/* <LayoutTemplate className="w-5 h-5 text-blue-400" /> */}
+            <FileText className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
             <h3 className="font-semibold text-white text-sm">Document Templates</h3>
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-white p-1 rounded-sm cursor-pointer" title="Close">
@@ -256,11 +313,143 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
               <div className="p-2.5 bg-amber-950/40 text-amber-300 border border-amber-800/50 rounded-lg text-[11px] flex gap-2">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
-                  The LLM gateway is not configured on the backend (DJANGO_LLM_EMAIL / DJANGO_LLM_OTP in
+                  The RAGSUITE LLM service is not configured on the backend (RAGSUITE_ENDPOINT in
                   Backend/.env). Uploads will fail until it is.
                 </span>
               </div>
             )}
+
+            {/* AI Model selector */}
+            <div className="space-y-1.5">
+              <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                <Cpu className="w-3 h-3" />
+                Select AI Model <span className="text-red-400">*</span>
+              </div>
+              <div className="relative" ref={modelDropdownRef}>
+                <button
+                  onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
+                  disabled={modelsLoading || isBusyUploading || modelLoadingId !== null}
+                  className="w-full px-3 py-2 bg-[#18233a] hover:bg-[#1f2d48] border border-[#23334d] text-white rounded-lg text-xs font-medium flex items-center justify-between gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {modelsLoading ? (
+                    <span className="flex items-center gap-1.5 text-neutral-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Loading models...
+                    </span>
+                  ) : selectedModel ? (
+                    <span className="flex items-center gap-2 truncate">
+                      {selectedModel.logo_url && (
+                        <img src={selectedModel.logo_url} alt="" className="w-4 h-4 rounded-sm object-contain" />
+                      )}
+                      <span className="truncate">{selectedModel.model_name}</span>
+                      <span className="text-[10px] text-neutral-500 shrink-0">{selectedModel.model_vendor}</span>
+                    </span>
+                  ) : (
+                    <span className="text-neutral-400">Choose a model...</span>
+                  )}
+                  <ChevronDown className={`w-3.5 h-3.5 text-neutral-400 shrink-0 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {modelDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full bg-[#131b2e] border border-[#23334d] rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                    {models.length === 0 && !modelsLoading && (
+                      <div className="px-3 py-4 text-xs text-neutral-400 text-center">
+                        {modelsError ? 'Failed to load models.' : 'No models available.'}
+                      </div>
+                    )}
+                    {models.filter((m) => m.tier === 'free').length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider bg-[#0f1626] sticky top-0">
+                          Free
+                        </div>
+                        {models.filter((m) => m.tier === 'free').map((model) => (
+                          <button
+                            key={model.model_id}
+                            onClick={() => handleSelectModel(model)}
+                            disabled={model.exceeded || modelLoadingId !== null}
+                            className={`w-full px-3 py-2 flex items-center gap-2.5 text-left text-xs transition-colors cursor-pointer disabled:cursor-not-allowed ${
+                              model.exceeded
+                                ? 'opacity-40'
+                                : selectedModel?.model_id === model.model_id
+                                ? 'bg-blue-950/40 text-white'
+                                : 'text-neutral-200 hover:bg-[#1a2842]'
+                            }`}
+                          >
+                            {modelLoadingId === model.model_id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                            ) : model.logo_url ? (
+                              <img src={model.logo_url} alt="" className="w-4 h-4 rounded-sm object-contain shrink-0" />
+                            ) : (
+                              <Cpu className="w-4 h-4 text-neutral-500 shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate font-medium">{model.model_name}</div>
+                              <div className="text-[10px] text-neutral-500 truncate">{model.model_vendor} • {model.provider}</div>
+                            </div>
+                            {model.exceeded && (
+                              <span className="text-[9px] text-red-400 border border-red-500/40 rounded-full px-1.5 shrink-0">Limit reached</span>
+                            )}
+                            {selectedModel?.model_id === model.model_id && (
+                              <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {models.filter((m) => m.tier === 'subscription').length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider bg-[#0f1626] sticky top-0">
+                          Subscription
+                        </div>
+                        {models.filter((m) => m.tier === 'subscription').map((model) => (
+                          <button
+                            key={model.model_id}
+                            onClick={() => handleSelectModel(model)}
+                            disabled={model.exceeded || modelLoadingId !== null}
+                            className={`w-full px-3 py-2 flex items-center gap-2.5 text-left text-xs transition-colors cursor-pointer disabled:cursor-not-allowed ${
+                              model.exceeded
+                                ? 'opacity-40'
+                                : selectedModel?.model_id === model.model_id
+                                ? 'bg-blue-950/40 text-white'
+                                : 'text-neutral-200 hover:bg-[#1a2842]'
+                            }`}
+                          >
+                            {modelLoadingId === model.model_id ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                            ) : model.logo_url ? (
+                              <img src={model.logo_url} alt="" className="w-4 h-4 rounded-sm object-contain shrink-0" />
+                            ) : (
+                              <Cpu className="w-4 h-4 text-neutral-500 shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate font-medium">{model.model_name}</div>
+                              <div className="text-[10px] text-neutral-500 truncate">{model.model_vendor} • {model.provider}</div>
+                            </div>
+                            {model.exceeded && (
+                              <span className="text-[9px] text-red-400 border border-red-500/40 rounded-full px-1.5 shrink-0">Limit reached</span>
+                            )}
+                            {selectedModel?.model_id === model.model_id && (
+                              <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+              {modelsError && (
+                <div className="text-[10px] text-red-400 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  {modelsError}
+                </div>
+              )}
+              {!selectedModel && !modelsLoading && !modelsError && (
+                <div className="text-[10px] text-amber-400/80">
+                  Please select an AI model before uploading a template.
+                </div>
+              )}
+            </div>
 
             <input
               ref={fileInputRef}
@@ -273,7 +462,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isBusyUploading}
+                disabled={isBusyUploading || !selectedModel}
                 className="px-3 py-1.5 bg-[#18233a] hover:bg-[#1f2d48] border border-[#23334d] text-white rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload className="w-3.5 h-3.5 text-blue-400" />
@@ -296,7 +485,7 @@ export const TemplatesModal: React.FC<TemplatesModalProps> = ({
                 />
                 <button
                   onClick={handleUpload}
-                  disabled={isBusyUploading}
+                  disabled={isBusyUploading || !selectedModel}
                   className="px-3 py-1.5 bg-[#2563eb] hover:bg-[#1d4ed8] text-white rounded-lg text-xs font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {isBusyUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}

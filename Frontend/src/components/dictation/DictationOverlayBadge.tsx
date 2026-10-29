@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, Square, Loader2 } from 'lucide-react';
+import { Mic, Square } from 'lucide-react';
 import { DictationStatus } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../utils/punctuation';
 
@@ -8,7 +8,6 @@ interface DictationOverlayBadgeProps {
   interimText: string;
   audioLevel: number;
   language: string;
-  engine: string;
   onStop: () => void;
 }
 
@@ -17,13 +16,11 @@ export const DictationOverlayBadge: React.FC<DictationOverlayBadgeProps> = ({
   interimText,
   audioLevel,
   language,
-  engine,
   onStop,
 }) => {
   const isListening = status === 'listening';
-  const isTranscribing = status === 'transcribing';
 
-  if (!isListening && !isTranscribing && !interimText) return null;
+  if (!isListening && !interimText) return null;
 
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.code === language) || SUPPORTED_LANGUAGES[0];
 
@@ -41,11 +38,7 @@ export const DictationOverlayBadge: React.FC<DictationOverlayBadgeProps> = ({
       <div className="bg-[#0f172a]/95 backdrop-blur-md text-white rounded-xl px-4 py-2.5 shadow-2xl border border-[#23334d] flex items-center gap-3">
         {/* Mic Icon with Audio Level animation */}
         <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 shrink-0 border border-blue-500/30">
-          {isTranscribing ? (
-            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-          ) : (
-            <Mic className="w-4 h-4 text-red-400 animate-pulse" />
-          )}
+          <Mic className="w-4 h-4 text-red-400 animate-pulse" />
         </div>
 
         {/* Live Audio Visualizer Bars */}
@@ -65,12 +58,12 @@ export const DictationOverlayBadge: React.FC<DictationOverlayBadgeProps> = ({
         <div className="flex flex-col min-w-[140px] max-w-[260px] sm:max-w-md truncate">
           <div className="flex items-center gap-1.5 text-[11px] text-[#7082a4]">
             <span className="font-semibold text-white uppercase tracking-wider text-[10px]">
-              {isTranscribing ? 'Transcribing...' : 'Listening'}
+              Listening
             </span>
             <span>•</span>
             <span>{currentLang.flag} {currentLang.label}</span>
             <span>•</span>
-            <span className="text-[10px] text-blue-400">{engine === 'browser' ? 'Browser' : 'Flask'}</span>
+            <span className="text-[10px] text-blue-400">Browser</span>
           </div>
 
           <p className="text-xs text-neutral-200 truncate italic">

@@ -11,17 +11,13 @@ export interface DocumentModel {
   template_id?: string | null;
 }
 
-export type DictationEngine = 'browser' | 'flask';
-
 export type DictationStatus =
   | 'idle'
   | 'requesting-permission'
   | 'listening'
-  | 'transcribing'
   | 'error';
 
 export interface DictationSettings {
-  engine: DictationEngine;
   language: string;
   autoPunctuation: boolean;
   continuous: boolean;
@@ -47,20 +43,10 @@ export interface PageLayoutConfig {
   zoom: number; // percentage, e.g. 100
 }
 
-export interface TranscriptionResponse {
-  success: boolean;
-  text: string;
-  language: string;
-  engine: string;
-  duration_seconds?: number;
-  error?: string;
-}
-
 export interface BackendHealth {
   status: string;
   service: string;
   version: string;
-  default_engine: string;
   max_upload_size_mb: number;
   database: string;
   llm_gateway_configured?: boolean;
@@ -154,3 +140,27 @@ export interface TemplateFieldUpdate {
 }
 
 export type ExportFormat = 'docx' | 'pdf';
+
+// ---------------------------------------------------------------------------
+// AI Model selection (RAGSUITE eligible models)
+// ---------------------------------------------------------------------------
+
+export interface AIModel {
+  model_id: string;
+  model_name: string;
+  model_vendor: string;
+  provider: string;
+  logo_url: string;
+  supports_vision: boolean;
+  thinking_model?: boolean;
+  exceeded: boolean;
+  remaining: number;
+  total: number;
+  used: number;
+  tier: 'free' | 'subscription';
+}
+
+export interface EligibleModelsResponse {
+  free: AIModel[];
+  subscription: AIModel[];
+}

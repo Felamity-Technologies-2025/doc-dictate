@@ -1,4 +1,4 @@
-#ragsuite_client.py
+#ragsuite_agent_client.py
 import requests
 import json
 import logging
@@ -7,11 +7,68 @@ import re
 import uuid
 from urllib.parse import urlsplit
 
+from flask import Blueprint, jsonify, request
+
+from config import Config
+
 logger = logging.getLogger(__name__)
 
 SOURCE_NOTE = re.compile(r"^(?:\s*Data fetching from the source:[^\n]*\n)+\s*")
+ragsuite_agent_bp = Blueprint("ragsuite_agent", __name__)
 
-class RagsuiteClient:
+
+@ragsuite_agent_bp.route('/api/eligible_models', methods=['GET'])
+def get_eligible_models():
+    """Proxy RAGSUITE's eligible-models list so the frontend can show a model picker."""
+    ragsuite_base = Config.RAGSUITE_ENDPOINT.rsplit('/', 2)[0]
+    url = f"{ragsuite_base}/api/eligible_models"
+    try:
+        resp = requests.get(url, headers={"Content-Type": "application/json"}, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if data and "free" in data and "subscription" in data:
+            return jsonify(data), 200
+        raise ValueError("Invalid data structure from RAGSUITE /api/eligible_models.")
+    except requests.exceptions.RequestException as e:
+        logger.error("Failed to fetch eligible models: %s", e)
+        return jsonify({"error": str(e)}), 502
+    except ValueError as e:
+        logger.error("Eligible models response invalid: %s", e)
+        return jsonify({"error": str(e)}), 502
+
+
+@ragsuite_agent_bp.route('/api/models/load', methods=['POST'])
+def load_model():
+    """Load a model in RAGSUITE and update the backend's LLM client to use it."""
+    body = request.get_json(silent=True) or {}
+    model_id = body.get("model_id", "")
+    vendor = body.get("vendor", "")
+    supports_vision = body.get("supports_vision", False)
+
+    if not model_id:
+        return jsonify({"error": "model_id is required."}), 400
+
+    ragsuite_base = Config.RAGSUITE_ENDPOINT.rsplit('/', 2)[0]
+    url = f"{ragsuite_base}/model-info/load"
+    payload = {"model_id": model_id, "vendor": vendor, "supports_vision": supports_vision}
+
+    try:
+        resp = requests.post(url, json=payload, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Import lazily because the extraction service imports this client module.
+        from services.template_extraction_service import get_llm_client
+        client = get_llm_client()
+        client.model_id = model_id
+        logger.info("Model loaded in RAGSUITE and LLM client updated: %s", model_id)
+
+        return jsonify(data), 200
+    except requests.exceptions.RequestException as e:
+        logger.error("Failed to load model in RAGSUITE: %s", e)
+        return jsonify({"error": str(e)}), 502
+
+class RagsuiteAgentClient:
     def __init__(self, endpoint="http://localhost:5641/query-data/HOME"):
         self.endpoint = endpoint
 
@@ -59,7 +116,7 @@ class RagsuiteClient:
         except requests.exceptions.RequestException as e:
             error = {"error": str(e)}
             if isinstance(e, requests.exceptions.ConnectionError):
-                error["error"] = (f"Connection error - RAGSUITE is not running at {self.endpoint}. "
+                error["error"] = (f"Connection error -  "
                                   "Open the RAGSUITE app and try again")
             elif isinstance(e, requests.exceptions.Timeout):
                 error["error"] = "Timeout - RAGSUITE took too long to respond"
@@ -75,12 +132,11 @@ class RagsuiteClient:
             return error
 
 
-class RagsuiteCompatClient(RagsuiteClient):
+class RagsuiteCompatClient(RagsuiteAgentClient):
     """
-    RagsuiteClient behind the DjangoLLMClient call signature used by the
-    template extraction service: query_llm(provider, model, messages, ...)
-    returning {"content": ...} or {"error": ...}. provider/model and the
-    gateway-only options (stream, complexity_score) are not sent to RAGSUITE.
+    RAGSUITE client for template structure extraction: query_llm(messages, ...)
+    and query_with_image(messages, image_paths, ...) returning {"content": ...}
+    or {"error": ...}.
 
     RAGSUITE answers only after a model has been loaded (the "Select AI Model"
     step of its UI). When it reports that none is loaded and `model_id` is set,
@@ -115,14 +171,27 @@ class RagsuiteCompatClient(RagsuiteClient):
                 first_user["content"] = system + "\n\n" + first_user["content"]
         return rest
 
-    def query_llm(self, provider, model, messages, stream=False, complexity_score=None, **generation_params):
+    def query_llm(self, *args, **kwargs):
+        # Support query_llm(messages, **kwargs)
+        # or legacy query_llm(provider, model, messages, **kwargs)
+        if len(args) == 1:
+            messages = args[0]
+        elif len(args) >= 3:
+            messages = args[2]
+        else:
+            messages = kwargs.pop("messages", None) or (args[0] if args else [])
+        kwargs.pop("provider", None)
+        kwargs.pop("model", None)
+        kwargs.pop("stream", None)
+        kwargs.pop("complexity_score", None)
+
         messages = self._fold_system(messages)
-        result = super().query_llm(messages, **generation_params)
+        result = super().query_llm(messages, **kwargs)
         if isinstance(result, dict) and "model not loaded" in result.get("error", "").lower():
             load_error = self.load_model()
             if load_error:
                 return {"error": load_error}
-            result = super().query_llm(messages, **generation_params)
+            result = super().query_llm(messages, **kwargs)
         if isinstance(result, dict):
             return result
         return {"content": result}
@@ -154,18 +223,33 @@ class RagsuiteCompatClient(RagsuiteClient):
         except (requests.exceptions.RequestException, ValueError, AttributeError) as e:
             return f"RAGSUITE could not load model '{self.model_id}': {e}"
 
-    def query_with_image(self, provider, model, messages, image_paths, stream=False, complexity_score=None,
-                         **generation_params):
+    def query_with_image(self, *args, **kwargs):
         """
         Same as query_llm, with page images attached the way RAGSUITE's chat attaches files:
         their absolute paths under current_files[chat_index]["RAGSUITE_CACHE"], read by RAGSUITE
         from disk (it runs on this machine). The files must exist until the call returns.
+        Supports query_with_image(messages, image_paths, ...) or legacy
+        query_with_image(provider, model, messages, image_paths, ...).
         """
+        if len(args) >= 4:
+            messages = args[2]
+            image_paths = args[3]
+        elif len(args) == 2:
+            messages = args[0]
+            image_paths = args[1]
+        else:
+            messages = kwargs.pop("messages", args[0] if len(args) > 0 else [])
+            image_paths = kwargs.pop("image_paths", args[1] if len(args) > 1 else [])
+        kwargs.pop("provider", None)
+        kwargs.pop("model", None)
+        kwargs.pop("stream", None)
+        kwargs.pop("complexity_score", None)
+
         chat_index = str(uuid.uuid4())  # a fresh chat, so no other attachments ride along
-        generation_params["chat_index"] = chat_index
-        generation_params["current_files"] = {
+        kwargs["chat_index"] = chat_index
+        kwargs["current_files"] = {
             chat_index: {"RAGSUITE_CACHE": [os.path.abspath(path) for path in image_paths]}}
-        result = self.query_llm(provider, model, messages, **generation_params)
+        result = self.query_llm(messages, **kwargs)
         if isinstance(result.get("content"), str):
             # RAGSUITE starts the answer with a "Data fetching from the source: <path>" line per file
             result["content"] = SOURCE_NOTE.sub("", result["content"])

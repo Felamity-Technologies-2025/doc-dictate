@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mic, ChevronDown, Settings, Upload, Globe, Check } from 'lucide-react';
+import { Mic, ChevronDown, Settings, Globe, Check } from 'lucide-react';
 import { DictationStatus, DictationSettings } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../utils/punctuation';
 
@@ -8,7 +8,6 @@ interface DictateButtonProps {
   settings: DictationSettings;
   onToggleDictation: () => void;
   onOpenSettings: () => void;
-  onOpenUpload: () => void;
   onUpdateLanguage: (lang: string) => void;
 }
 
@@ -17,13 +16,11 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
   settings,
   onToggleDictation,
   onOpenSettings,
-  onOpenUpload,
   onUpdateLanguage,
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const isRecording = status === 'listening';
-  const isTranscribing = status === 'transcribing';
   const isRequesting = status === 'requesting-permission';
 
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.code === settings.language) || SUPPORTED_LANGUAGES[0];
@@ -34,8 +31,6 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
         className={`flex items-stretch rounded border transition-all shadow-xs ${
           isRecording
             ? 'bg-red-50 border-red-300 ring-2 ring-red-400/30'
-            : isTranscribing
-            ? 'bg-amber-50 border-amber-300'
             : 'bg-white hover:bg-neutral-50 border-neutral-200'
         }`}
       >
@@ -46,8 +41,6 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
           className={`flex flex-col items-center justify-center px-3 py-1 text-center cursor-pointer min-w-[62px] transition-colors ${
             isRecording
               ? 'text-red-600'
-              : isTranscribing
-              ? 'text-amber-600'
               : 'text-neutral-700 hover:text-blue-700'
           }`}
           title={isRecording ? 'Click to stop dictation' : 'Click to start voice dictation'}
@@ -57,8 +50,6 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
               className={`w-6 h-6 transition-transform ${
                 isRecording
                   ? 'animate-pulse text-red-600 scale-110'
-                  : isTranscribing
-                  ? 'animate-spin text-amber-600'
                   : 'text-blue-600'
               }`}
             />
@@ -72,8 +63,6 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
           <span className="text-[11px] font-semibold leading-tight">
             {isRecording
               ? 'Dictating...'
-              : isTranscribing
-              ? 'Transcribing'
               : isRequesting
               ? 'Starting...'
               : 'Dictate'}
@@ -109,7 +98,7 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
             <div className="px-3 py-1.5 border-b border-neutral-100 flex items-center justify-between text-neutral-500">
               <span className="font-semibold text-neutral-700">Dictation Options</span>
               <span className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-medium uppercase">
-                {settings.engine === 'browser' ? 'Browser WebSpeech' : 'Flask Backend'}
+                Browser WebSpeech
               </span>
             </div>
 
@@ -138,20 +127,6 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
               ))}
             </div>
 
-            <div className="border-t border-neutral-100 my-1" />
-
-            {/* Upload Pre-recorded Audio */}
-            <button
-              onClick={() => {
-                setDropdownOpen(false);
-                onOpenUpload();
-              }}
-              className="w-full px-3 py-1.5 flex items-center gap-2 text-neutral-700 hover:bg-neutral-100 transition-colors"
-            >
-              <Upload className="w-3.5 h-3.5 text-neutral-500" />
-              <span>Transcribe Audio File (Flask API)...</span>
-            </button>
-
             {/* Dictation Settings */}
             <button
               onClick={() => {
@@ -161,7 +136,7 @@ export const DictateButton: React.FC<DictateButtonProps> = ({
               className="w-full px-3 py-1.5 flex items-center gap-2 text-neutral-700 hover:bg-neutral-100 transition-colors"
             >
               <Settings className="w-3.5 h-3.5 text-neutral-500" />
-              <span>Dictation Settings & Engine...</span>
+              <span>Dictation Settings...</span>
             </button>
           </div>
         </>

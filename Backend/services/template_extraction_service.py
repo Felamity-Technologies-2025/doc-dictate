@@ -22,8 +22,7 @@ from docx.text.paragraph import Paragraph
 from lxml.etree import XMLSyntaxError
 
 from config import Config
-from djangoLLM_client import DjangoLLMClient
-from ragsuite_client import RagsuiteCompatClient
+from ragsuite_agent_client import RagsuiteCompatClient
 from services.pdf_service import PdfContent, read_pdf, render_pages_to_images
 from services.template_layout_service import (
     TemplateLayout,
@@ -95,20 +94,15 @@ class ExtractionResult:
 
 
 _client_lock = threading.Lock()
-_client: Optional[DjangoLLMClient] = None
+_client: Optional[RagsuiteCompatClient] = None
 
 
-def get_llm_client() -> DjangoLLMClient:
-    """Shared client (selected by Config.LLM_CLIENT) so the gateway auth token is reused across requests."""
+def get_llm_client() -> RagsuiteCompatClient:
+    """Shared RAGSUITE client so connection and loaded model are reused across requests."""
     global _client
     with _client_lock:
         if _client is None:
-            if Config.LLM_CLIENT == 'ragsuite':
-                _client = RagsuiteCompatClient(Config.RAGSUITE_ENDPOINT, Config.RAGSUITE_MODEL_ID)
-            elif Config.LLM_CLIENT == 'django':
-                _client = DjangoLLMClient()
-            else:
-                raise ExtractionError(f"Unknown LLM_CLIENT '{Config.LLM_CLIENT}'; use 'ragsuite' or 'django'.", 503)
+            _client = RagsuiteCompatClient(Config.RAGSUITE_ENDPOINT, Config.RAGSUITE_MODEL_ID)
         return _client
 
 
@@ -135,7 +129,7 @@ def _response_text(response) -> str:
         if isinstance(detail, (dict, list)):
             detail = json.dumps(detail)[:200]
         if status in (401, 403):
-            raise ExtractionError('The LLM gateway rejected the credentials. Check DJANGO_LLM_EMAIL / DJANGO_LLM_OTP.', 502)
+            raise ExtractionError('The LLM service rejected the request.', 502)
         message = 'The LLM gateway request failed'
         if status:
             message += f' (HTTP {status})'
@@ -353,7 +347,7 @@ def _build_user_prompt(filename: str, pdf: PdfContent, text: str, truncated: boo
 
 
 def extract_template_structure(pdf_bytes: bytes, filename: str,
-                               client: Optional[DjangoLLMClient] = None) -> ExtractionResult:
+                               client: Optional[RagsuiteCompatClient] = None) -> ExtractionResult:
     pdf = read_pdf(pdf_bytes, Config.TEMPLATE_PDF_MAX_PAGES)
 
     if not pdf.text and not pdf.scanned_pages:
@@ -367,7 +361,7 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
     client = client or get_llm_client()
     if not client.is_configured:
         raise ExtractionError(
-            'The LLM gateway is not configured. Set DJANGO_LLM_EMAIL and DJANGO_LLM_OTP in Backend/.env.', 503
+            'The RAGSUITE LLM service is not configured. Check RAGSUITE_ENDPOINT in Backend/.env.', 503
         )
 
     system = {'role': 'system', 'content': EXTRACTION_SYSTEM_PROMPT}
@@ -385,7 +379,6 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
                     logger.info("Template extraction via vision model: %s page image(s) at %s dpi, %s text page(s) (attempt %s)",
                                 len(images), dpi, pdf.text_page_count, attempt)
                     response = client.query_with_image(
-                        Config.DJANGO_LLM_VISION_PROVIDER, Config.DJANGO_LLM_VISION_MODEL,
                         [system, user], images, complexity_score=0.7,
                     )
                 if not _is_transient_failure(response):
@@ -398,7 +391,7 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
             logger.info("Template extraction via text model: %s chars from %s page(s)", len(text), pdf.page_count)
             for attempt in range(2):
                 response = client.query_llm(
-                    Config.DJANGO_LLM_PROVIDER, Config.DJANGO_LLM_MODEL, [system, user], complexity_score=0.5,
+                    [system, user], complexity_score=0.5,
                 )
                 if not _is_transient_failure(response):
                     break
@@ -430,7 +423,7 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
 
 
 def extract_template_structure_from_docx(docx_bytes: bytes, filename: str,
-                                         client: Optional[DjangoLLMClient] = None) -> ExtractionResult:
+                                         client: Optional[RagsuiteCompatClient] = None) -> ExtractionResult:
     """Extract reusable template headings from DOCX text and table contents."""
     try:
         document = DocxDocument(io.BytesIO(docx_bytes))
@@ -464,7 +457,7 @@ def extract_template_structure_from_docx(docx_bytes: bytes, filename: str,
     client = client or get_llm_client()
     if not client.is_configured:
         raise ExtractionError(
-            'The LLM gateway is not configured. Set DJANGO_LLM_EMAIL and DJANGO_LLM_OTP in Backend/.env.', 503
+            'The RAGSUITE LLM service is not configured. Check RAGSUITE_ENDPOINT in Backend/.env.', 503
         )
 
     prompt_lines = [
@@ -482,7 +475,6 @@ def extract_template_structure_from_docx(docx_bytes: bytes, filename: str,
         response = None
         for attempt in range(2):
             response = client.query_llm(
-                Config.DJANGO_LLM_PROVIDER, Config.DJANGO_LLM_MODEL,
                 [system, user], complexity_score=0.5,
             )
             if not _is_transient_failure(response):

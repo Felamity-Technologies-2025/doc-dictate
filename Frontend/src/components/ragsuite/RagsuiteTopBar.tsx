@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Cpu,
   ChevronDown,
   FileText,
   ChevronRight,
@@ -30,6 +29,7 @@ interface RagsuiteTopBarProps {
   onOpenTemplates: () => void;
   onExportDocument: (format: ExportFormat) => void;
   exportingFormat: ExportFormat | null;
+  hasDocumentContent: boolean;
   onUpdateDictationLanguage: (language: string) => void;
   dictationStatus: DictationStatus;
   onToggleDictation: () => void;
@@ -47,15 +47,14 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
   onOpenTemplates,
   onExportDocument,
   exportingFormat,
+  hasDocumentContent,
   onUpdateDictationLanguage,
   dictationStatus,
   onToggleDictation,
 }) => {
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
-  const [engineDropdownOpen, setEngineDropdownOpen] = useState(false);
   const [dictationMenuOpen, setDictationMenuOpen] = useState(false);
   const isRecording = dictationStatus === 'listening';
-  const isTranscribing = dictationStatus === 'transcribing';
   const isRequesting = dictationStatus === 'requesting-permission';
   const currentLang =
     SUPPORTED_LANGUAGES.find((language) => language.code === dictationSettings.language) ??
@@ -65,68 +64,6 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
     <header className="min-h-14 bg-[#0b101e] border-b border-[#19243a] px-2.5 sm:px-4 py-2 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 sm:gap-x-3 gap-y-2 select-none shrink-0 z-30">
       {/* Left Action Pills (icon-only on small screens) */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {/* Select AI Model / Speech Engine Dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setEngineDropdownOpen(!engineDropdownOpen)}
-            className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-white rounded-lg px-2 sm:px-3 py-1.5 text-xs font-normal flex items-center gap-1.5 sm:gap-2 cursor-pointer transition-colors shadow-xs"
-            title="Speech-to-Text Engine"
-          >
-            <Cpu className="w-4 h-4 text-blue-400" />
-            <span className="font-medium hidden xl:inline">
-              {dictationSettings.engine === 'browser' ? 'Browser WebSpeech' : 'Flask Backend'}
-            </span>
-            <ChevronDown className="w-3.5 h-3.5 text-neutral-400" />
-          </button>
-
-          {engineDropdownOpen && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setEngineDropdownOpen(false)} />
-              <div className="absolute top-full left-0 mt-1.5 w-60 max-w-[calc(100vw-1.25rem)] bg-[#121929] border border-[#23334d] rounded-lg shadow-2xl py-1.5 z-40 text-xs text-neutral-200">
-                <div className="px-3 py-1 text-[10px] uppercase font-bold text-neutral-500 tracking-wider">
-                  Speech-to-Text Engines
-                </div>
-                <button
-                  onClick={() => {
-                    onOpenDictationSettings();
-                    setEngineDropdownOpen(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-[#1a2842] flex items-center justify-between"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium text-white">Browser WebSpeech API</span>
-                    <span className="text-[10px] text-neutral-400">Zero latency real-time voice typing</span>
-                  </div>
-                  {dictationSettings.engine === 'browser' && <Check className="w-4 h-4 text-blue-400" />}
-                </button>
-                <button
-                  onClick={() => {
-                    onOpenDictationSettings();
-                    setEngineDropdownOpen(false);
-                  }}
-                  className="w-full px-3 py-2 text-left hover:bg-[#1a2842] flex items-center justify-between"
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium text-white">Python Flask Backend</span>
-                    <span className="text-[10px] text-neutral-400">Google / Whisper audio API</span>
-                  </div>
-                  {dictationSettings.engine === 'flask' && <Check className="w-4 h-4 text-blue-400" />}
-                </button>
-                <div className="border-t border-[#1e2c47] my-1" />
-                <button
-                  onClick={() => {
-                    onOpenDictationSettings();
-                    setEngineDropdownOpen(false);
-                  }}
-                  className="w-full px-3 py-1.5 text-left text-blue-400 hover:bg-[#1a2842] text-[11px]"
-                >
-                  Engine & Language Settings...
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
         {/* New Document Button */}
         {onNewDocument && (
           <button
@@ -156,7 +93,8 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
           className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-neutral-200 hover:text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-normal flex items-center gap-2 cursor-pointer transition-colors shadow-xs"
           title="Upload PDF or DOCX templates and create documents from them"
         >
-          <LayoutTemplate className="w-4 h-4 text-blue-400" />
+          {/* <LayoutTemplate className="w-4 h-4 text-blue-400" /> */}
+          <FileText className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
           <span className="hidden lg:inline">Templates</span>
         </button>
       </div>
@@ -217,8 +155,6 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
             className={`flex items-stretch rounded-lg border transition-all ${
               isRecording
                 ? 'bg-red-500/20 border-red-500/60 ring-2 ring-red-500/30'
-                : isTranscribing
-                ? 'bg-amber-500/20 border-amber-500/50'
                 : 'bg-[#18233a] hover:bg-[#1e2b47] border-[#253552]'
             }`}
           >
@@ -228,8 +164,6 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
               className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 text-xs font-semibold cursor-pointer transition-colors disabled:opacity-60 ${
                 isRecording
                   ? 'text-red-400'
-                  : isTranscribing
-                  ? 'text-amber-400'
                   : 'text-white hover:text-blue-400'
               }`}
               title={isRecording ? 'Click to stop dictating' : 'Click to start voice dictation'}
@@ -238,16 +172,12 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
                 className={`w-4 h-4 ${
                   isRecording
                     ? 'text-red-500 animate-pulse scale-110'
-                    : isTranscribing
-                    ? 'text-amber-400 animate-spin'
                     : 'text-blue-400'
                 }`}
               />
               <span>
                 {isRecording
                   ? 'Recording...'
-                  : isTranscribing
-                  ? 'Transcribing...'
                   : isRequesting
                   ? 'Starting...'
                   : 'Dictate'}
@@ -271,7 +201,7 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
                 <div className="px-3 py-1 border-b border-[#1e2c47] flex items-center justify-between text-neutral-400">
                   <span className="font-semibold text-white">Voice Dictation</span>
                   <span className="text-[10px] text-blue-400 uppercase font-mono">
-                    {dictationSettings.engine}
+                    Browser WebSpeech
                   </span>
                 </div>
                 <div className="px-3 py-1.5 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider">
@@ -300,17 +230,6 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
                     </button>
                   ))}
                 </div>
-                <div className="border-t border-[#1e2c47] my-1" />
-                <button
-                  onClick={() => {
-                    setDictationMenuOpen(false);
-                    onOpenDictationSettings();
-                  }}
-                  className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a2842] text-neutral-300 hover:text-white"
-                >
-                  <SettingsIcon className="w-3.5 h-3.5 text-neutral-400" />
-                  <span>Dictation Settings & Engines...</span>
-                </button>
               </div>
             </>
           )}
@@ -320,9 +239,9 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
         <div className="relative">
           <button
             onClick={() => setDownloadMenuOpen(!downloadMenuOpen)}
-            disabled={!!exportingFormat}
-            className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60"
-            title="Download or export document"
+            disabled={!!exportingFormat || !hasDocumentContent}
+            className="bg-[#162035] hover:bg-[#1a2842] border border-[#23334d] text-white rounded-lg px-2.5 sm:px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            title={hasDocumentContent ? 'Download or export document' : 'Add content before downloading'}
           >
             {exportingFormat ? (
               <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin" />
@@ -333,7 +252,7 @@ export const RagsuiteTopBar: React.FC<RagsuiteTopBarProps> = ({
             <ChevronDown className="w-3 h-3 text-neutral-400" />
           </button>
 
-          {downloadMenuOpen && (
+          {downloadMenuOpen && hasDocumentContent && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setDownloadMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#121929] border border-[#23334d] text-neutral-200 rounded-lg shadow-2xl py-1.5 z-40 text-xs">

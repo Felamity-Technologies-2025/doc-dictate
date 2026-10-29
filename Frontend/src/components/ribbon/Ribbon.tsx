@@ -20,7 +20,6 @@ interface RibbonProps {
   dictationSettings: DictationSettings;
   onToggleDictation: () => void;
   onOpenDictationSettings: () => void;
-  onOpenAudioUpload: () => void;
   onUpdateDictationLanguage: (lang: string) => void;
   onOpenFindReplace: () => void;
   onOpenTableDialog: () => void;
@@ -40,7 +39,6 @@ export const Ribbon: React.FC<RibbonProps> = ({
   dictationSettings,
   onToggleDictation,
   onOpenDictationSettings,
-  onOpenAudioUpload,
   onUpdateDictationLanguage,
   onOpenFindReplace,
   onOpenTableDialog,
@@ -91,7 +89,6 @@ export const Ribbon: React.FC<RibbonProps> = ({
               dictationSettings={dictationSettings}
               onToggleDictation={onToggleDictation}
               onOpenDictationSettings={onOpenDictationSettings}
-              onOpenAudioUpload={onOpenAudioUpload}
               onUpdateDictationLanguage={onUpdateDictationLanguage}
               onOpenFindReplace={onOpenFindReplace}
             />

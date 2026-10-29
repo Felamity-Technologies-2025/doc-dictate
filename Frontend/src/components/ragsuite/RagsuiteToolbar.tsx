@@ -64,14 +64,31 @@ const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '2
 const DEFAULT_FONT_SIZE = 14;
 const LINE_SPACINGS = ['1', '1.15', '1.5', '2', '2.5', '3'];
 
+/** Default text color for all 6 headings ("Dark Blue, Accent 1, Darker 25%") */
+const HEADING_COLOR = '#0f4761';
+
 const TEXT_COLORS = [
-  '#ffffff', '#94a3b8', '#000000', '#60a5fa', '#3b82f6', '#1d4ed8',
-  '#34d399', '#10b981', '#f87171', '#ef4444', '#fbbf24', '#f59e0b',
-  '#c084fc', '#a855f7', '#f43f5e', '#fb923c', '#22d3ee', '#a3e635',
+  // Monochrome & Neutrals
+  '#000000', '#1e293b', '#475569', '#64748b', '#94a3b8', '#cbd5e1', '#ffffff',
+  // Blues & Teals (including Dark Blue, Accent 1, Darker 25%: #0f4761)
+  '#0f4761', '#1e3a8a', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#06b6d4',
+  // Greens & Emeralds
+  '#064e3b', '#047857', '#10b981', '#34d399', '#6ee7b7', '#84cc16', '#a3e635',
+  // Yellows, Ambers & Oranges
+  '#78350f', '#b45309', '#d97706', '#f59e0b', '#fbbf24', '#ea580c', '#f97316',
+  // Reds, Roses & Purples
+  '#991b1b', '#dc2626', '#ef4444', '#f87171', '#e11d48', '#9333ea', '#c084fc',
 ];
+
 const HIGHLIGHT_COLORS = [
-  '#fef08a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#ddd6fe', '#fed7aa',
-  '#fde047', '#4ade80', '#38bdf8', '#f472b6', '#a78bfa', '#fb923c',
+  // Yellows & Ambers
+  '#fef08a', '#fde047', '#facc15', '#fed7aa', '#fdba74', '#fb923c', '#ffedd5',
+  // Greens & Mints
+  '#bbf7d0', '#86efac', '#4ade80', '#22c55e', '#99f6e4', '#5eead4', '#dcfce7',
+  // Blues, Cyans & Lavenders
+  '#bae6fd', '#7dd3fc', '#38bdf8', '#c7d2fe', '#a5b4fc', '#ddd6fe', '#e0f2fe',
+  // Pinks, Roses & Neutrals
+  '#fbcfe8', '#f472b6', '#ec4899', '#fecdd3', '#fda4af', '#e2e8f0', '#cbd5e1',
 ];
 
 const SELECT_CLASS =
@@ -124,22 +141,22 @@ const ColorPopover: React.FC<ColorPopoverProps> = ({
   ];
 
   return (
-    <div className="bg-[#0f1626] border border-[#23334d] rounded-lg p-2.5 animate-in fade-in duration-150">
-      <div className="grid gap-1.5 justify-items-center" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+    <div className="bg-[#0f1626] border border-[#23334d] rounded-lg p-2 animate-in fade-in duration-150">
+      <div className="grid gap-1 justify-items-center" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
         {colors.map((c) => (
           <button
             key={c}
             onClick={() => onPick(c)}
             style={{ backgroundColor: c }}
-            title={c}
-            className="w-6 h-6 rounded border border-white/20 hover:scale-110 transition-transform cursor-pointer"
+            title={c.toLowerCase() === HEADING_COLOR.toLowerCase() ? `Dark Blue, Accent 1, Darker 25% (${c})` : c}
+            className="w-5 h-5 rounded-[4px] border border-white/20 hover:border-white/80 hover:scale-115 shadow-xs transition-all cursor-pointer"
           />
         ))}
       </div>
       {onClear && (
         <button
           onClick={onClear}
-          className="mt-2 w-full text-left px-2 py-1 rounded hover:bg-[#1a2842] text-neutral-300"
+          className="mt-2 w-full text-left px-2 py-1 rounded hover:bg-[#1a2842] text-neutral-300 text-[11px]"
         >
           ✕ {clearLabel}
         </button>
@@ -518,7 +535,7 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
               setColorPickerOpen(!colorPickerOpen);
               setHighlightPickerOpen(false);
             }}
-            className={`flex-1 h-8 px-2 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-colors ${
+            className={`flex-1 h-7.5 px-2 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-colors ${
               colorPickerOpen
                 ? 'bg-[#1a2842] border-blue-500/50 text-white'
                 : 'bg-[#18233a] border-[#23334d] text-neutral-300 hover:text-white hover:border-blue-500/50'
@@ -527,8 +544,8 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
             aria-expanded={colorPickerOpen}
           >
             <Palette className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            <span className="w-3.5 h-3.5 rounded-sm border border-white/20 shrink-0" style={{ backgroundColor: currentTextColor }} />
-            <span className="flex-1 text-left truncate">Color</span>
+            <span className="w-2.5 h-2.5 rounded-[2px] border border-white/30 shrink-0" style={{ backgroundColor: currentTextColor }} />
+            <span className="flex-1 text-left truncate text-xs">Color</span>
             <ChevronDown className={`w-2.5 h-2.5 text-neutral-500 transition-transform ${colorPickerOpen ? 'rotate-180' : ''}`} />
           </button>
           <button
@@ -537,7 +554,7 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
               setHighlightPickerOpen(!highlightPickerOpen);
               setColorPickerOpen(false);
             }}
-            className={`flex-1 h-8 px-2 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-colors ${
+            className={`flex-1 h-7.5 px-2 rounded-lg border flex items-center gap-1.5 cursor-pointer transition-colors ${
               highlightPickerOpen
                 ? 'bg-[#1a2842] border-blue-500/50 text-white'
                 : 'bg-[#18233a] border-[#23334d] text-neutral-300 hover:text-white hover:border-blue-500/50'
@@ -546,8 +563,8 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
             aria-expanded={highlightPickerOpen}
           >
             <Highlighter className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="w-3.5 h-3.5 rounded-sm border border-white/20 shrink-0" style={{ backgroundColor: currentHighlight }} />
-            <span className="flex-1 text-left truncate">Mark</span>
+            <span className="w-2.5 h-2.5 rounded-[2px] border border-white/30 shrink-0" style={{ backgroundColor: currentHighlight }} />
+            <span className="flex-1 text-left truncate text-xs">Mark</span>
             <ChevronDown className={`w-2.5 h-2.5 text-neutral-500 transition-transform ${highlightPickerOpen ? 'rotate-180' : ''}`} />
           </button>
         </div>
@@ -564,7 +581,7 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
           <ColorPopover
             colors={TEXT_COLORS}
             initial={currentTextColor}
-            columns={6}
+            columns={7}
             onPick={applyTextColor}
             onClear={clearTextColor}
             clearLabel="Automatic (remove color)"
@@ -574,7 +591,7 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
           <ColorPopover
             colors={HIGHLIGHT_COLORS}
             initial={currentHighlight}
-            columns={6}
+            columns={7}
             onPick={applyHighlight}
             onClear={clearHighlight}
             clearLabel="No highlight"
@@ -584,80 +601,99 @@ export const RagsuiteToolbar: React.FC<RagsuiteToolbarProps> = ({
 
       {/* Alignment, lists, indents, spacing, headings */}
       <ToolSection title="Paragraph">
-        <div className="grid grid-cols-6 gap-1">
-          {textAlignments.map(({ value, label, Icon }) => (
-            <ToolButton
-              key={value}
-              onClick={() => editor.chain().focus().setTextAlign(value).run()}
-              active={currentTextAlignment.value === value}
-              title={label}
-            >
-              <Icon className="w-3.5 h-3.5" />
-            </ToolButton>
-          ))}
-          <ToolButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bulleted list">
-            <List className="w-3.5 h-3.5" />
-          </ToolButton>
-          <ToolButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered list">
-            <ListOrdered className="w-3.5 h-3.5" />
-          </ToolButton>
-        </div>
-        <div className="flex items-center gap-1">
-          <ToolButton onClick={outdent} disabled={!editor.can().liftListItem('listItem')} title="Decrease Indent">
-            <Outdent className="w-3.5 h-3.5" />
-          </ToolButton>
-          <ToolButton onClick={indent} disabled={!editor.can().sinkListItem('listItem')} title="Increase Indent">
-            <Indent className="w-3.5 h-3.5" />
-          </ToolButton>
-          <div className="flex-1 min-w-0 relative">
-            <ArrowUpDown className="w-3.5 h-3.5 text-neutral-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
-              value={currentLineHeight}
-              onChange={(e) => applyLineSpacing(e.target.value)}
-              className={`${SELECT_CLASS} w-full pl-7`}
-              title="Line Spacing"
-            >
-              <option value="">Default spacing</option>
-              {currentLineHeight && !LINE_SPACINGS.includes(currentLineHeight) && (
-                <option value={currentLineHeight}>{currentLineHeight}</option>
-              )}
-              {LINE_SPACINGS.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
+        {/* Text Alignment Row */}
+        <div>
+          <div className="text-[10px] text-neutral-400 mb-1 font-medium">Text Alignment</div>
+          <div className="grid grid-cols-4 gap-1">
+            {textAlignments.map(({ value, label, Icon }) => (
+              <ToolButton
+                key={value}
+                onClick={() => editor.chain().focus().setTextAlign(value).run()}
+                active={currentTextAlignment.value === value}
+                title={label}
+              >
+                <Icon className="w-3.5 h-3.5" />
+              </ToolButton>
+            ))}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-1">
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-            className={`h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-              editor.isActive('heading', { level: 1 })
-                ? 'bg-blue-600 text-white'
-                : 'bg-[#18233a] hover:bg-[#1f2d48] text-blue-400'
-            }`}
-            title="Heading 1"
+
+        {/* Lists & Indentation Row (Cleanly separated from text alignment) */}
+        <div>
+          <div className="text-[10px] text-neutral-400 mb-1 font-medium">Lists & Indent</div>
+          <div className="grid grid-cols-4 gap-1">
+            <ToolButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bulleted list">
+              <List className="w-3.5 h-3.5" />
+            </ToolButton>
+            <ToolButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Numbered list">
+              <ListOrdered className="w-3.5 h-3.5" />
+            </ToolButton>
+            <ToolButton onClick={outdent} disabled={!editor.can().liftListItem('listItem')} title="Decrease Indent">
+              <Outdent className="w-3.5 h-3.5" />
+            </ToolButton>
+            <ToolButton onClick={indent} disabled={!editor.can().sinkListItem('listItem')} title="Increase Indent">
+              <Indent className="w-3.5 h-3.5" />
+            </ToolButton>
+          </div>
+        </div>
+
+        {/* Line Spacing */}
+        <div className="relative">
+          <ArrowUpDown className="w-3.5 h-3.5 text-neutral-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <select
+            value={currentLineHeight}
+            onChange={(e) => applyLineSpacing(e.target.value)}
+            className={`${SELECT_CLASS} w-full pl-7`}
+            title="Line Spacing"
           >
-            H1
-          </button>
-          <button
-            type="button"
-            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-            className={`h-8 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-              editor.isActive('heading', { level: 2 })
-                ? 'bg-blue-600 text-white'
-                : 'bg-[#18233a] hover:bg-[#1f2d48] text-blue-300'
-            }`}
-            title="Heading 2"
+            <option value="">Default line spacing</option>
+            {currentLineHeight && !LINE_SPACINGS.includes(currentLineHeight) && (
+              <option value={currentLineHeight}>{currentLineHeight}</option>
+            )}
+            {LINE_SPACINGS.map((v) => (
+              <option key={v} value={v}>
+                {v}x spacing
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Headings (All 6 levels + Normal text) & Quote */}
+        <div className="flex items-center gap-1">
+          <select
+            value={
+              ([1, 2, 3, 4, 5, 6] as const).find((level) =>
+                editor.isActive('heading', { level })
+              )?.toString() ?? 'p'
+            }
+            onChange={(event) => {
+              const val = event.target.value;
+              if (val === 'p') {
+                editor.chain().focus().setParagraph().unsetColor().run();
+              } else {
+                const level = ([1, 2, 3, 4, 5, 6] as const).find(
+                  (headingLevel) => String(headingLevel) === val
+                );
+                if (level) {
+                  editor.chain().focus().setHeading({ level }).setColor(HEADING_COLOR).run();
+                }
+              }
+            }}
+            className={`${SELECT_CLASS} flex-1 min-w-0 font-medium`}
+            title="Apply heading style or normal text"
+            aria-label="Heading level"
           >
-            H2
-          </button>
+            <option value="p">Headings</option>
+            {([1, 2, 3, 4, 5, 6] as const).map((level) => (
+              <option key={level} value={level}>
+                Heading {level}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
-            className={`h-8 rounded-lg text-xs cursor-pointer transition-colors flex items-center justify-center gap-1 ${
+            className={`h-8 px-2.5 rounded-lg text-xs cursor-pointer transition-colors flex items-center justify-center gap-1 shrink-0 ${
               editor.isActive('blockquote')
                 ? 'bg-blue-600 text-white'
                 : 'bg-[#18233a] hover:bg-[#1f2d48] text-neutral-300'

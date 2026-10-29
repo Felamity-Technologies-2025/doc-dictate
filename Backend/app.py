@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 from flask import Flask, jsonify
 from flask_cors import CORS
 from config import Config
-from routes.transcription import transcription_bp
+from ragsuite_agent_client import ragsuite_agent_bp
 from routes.documents import documents_bp
 from routes.templates import templates_bp
 from services.template_extraction_service import get_llm_client
@@ -24,22 +24,18 @@ def create_app():
     # Initialize CORS
     CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
-    # Ensure uploads folder exists
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-
     # Register API blueprints
-    app.register_blueprint(transcription_bp, url_prefix='/api')
     app.register_blueprint(documents_bp, url_prefix='/api/documents')
     app.register_blueprint(templates_bp, url_prefix='/api/templates')
+    app.register_blueprint(ragsuite_agent_bp)
 
     # Health check endpoint
     @app.route('/api/health', methods=['GET'])
     def health_check():
         return jsonify({
             'status': 'ok',
-            'service': 'audio-transcription',
+            'service': 'document-editor',
             'version': '1.0.0',
-            'default_engine': Config.DEFAULT_SPEECH_ENGINE,
             'max_upload_size_mb': Config.MAX_CONTENT_LENGTH // (1024 * 1024),
             'database': 'sqlite3',
             'llm_gateway_configured': get_llm_client().is_configured,
@@ -72,18 +68,12 @@ if __name__ == '__main__':
     port = int(os.getenv('FLASK_PORT', 5000))
     host = os.getenv('HOST', '0.0.0.0')
     logger.info(f"Starting Audio_Transcription Flask backend on http://{host}:{port}")
-    if Config.LLM_CLIENT == 'ragsuite':
-        logger.info(f"LLM client: RAGSUITE | model: {Config.RAGSUITE_MODEL_ID or '(whichever is loaded in RAGSUITE)'} "
-                    f"| endpoint: {Config.RAGSUITE_ENDPOINT}")
-        try:
-            socket.create_connection((urlsplit(Config.RAGSUITE_ENDPOINT).hostname,
-                                      urlsplit(Config.RAGSUITE_ENDPOINT).port or 80), timeout=2).close()
-            logger.info("RAGSUITE is reachable")
-        except OSError:
-            logger.warning("RAGSUITE is NOT running - open the RAGSUITE app before extracting headings")
-    elif Config.LLM_CLIENT == 'django':
-        logger.info(f"LLM client: Django gateway (djangoLLM_client) | provider: {Config.DJANGO_LLM_PROVIDER} "
-                    f"| model: {Config.DJANGO_LLM_MODEL}")
-    else:
-        logger.warning(f"Unknown LLM_CLIENT '{Config.LLM_CLIENT}' - use 'ragsuite' or 'django'")
+    logger.info(f"LLM client: RAGSUITE | model: {Config.RAGSUITE_MODEL_ID or '(whichever is loaded in RAGSUITE)'} "
+                f"| endpoint: {Config.RAGSUITE_ENDPOINT}")
+    try:
+        socket.create_connection((urlsplit(Config.RAGSUITE_ENDPOINT).hostname,
+                                  urlsplit(Config.RAGSUITE_ENDPOINT).port or 80), timeout=2).close()
+        logger.info("RAGSUITE is reachable")
+    except OSError:
+        logger.warning("RAGSUITE is NOT running - open the RAGSUITE app before extracting headings")
     app.run(host=host, port=port, debug=False)

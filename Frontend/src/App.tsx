@@ -12,7 +12,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
-import type { JSONContent } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 import { FontStyle, LineHeight, Subscript, Superscript } from './utils/editorExtensions';
 import {
   TemplateFieldNode,
@@ -37,7 +37,6 @@ import { RagsuiteEditorCard } from './components/ragsuite/RagsuiteEditorCard';
 
 import { DictationOverlayBadge } from './components/dictation/DictationOverlayBadge';
 import { DictationSettingsModal } from './components/dictation/DictationSettingsModal';
-import { AudioFileUploadModal } from './components/dictation/AudioFileUploadModal';
 import { DocumentsModal } from './components/layout/DocumentsModal';
 import { PreviewModal } from './components/editor/PreviewModal';
 import { TableDialog } from './components/editor/TableDialog';
@@ -50,12 +49,28 @@ import { ApiService } from './services/api';
 import { PageLayoutConfig, DocumentModel, BackendHealth, ExportFormat, TemplateModel } from './types';
 import { AlertTriangle, X } from 'lucide-react';
 
+const documentHasContent = (editor: Editor): boolean => {
+  if (editor.getText().trim()) return true;
+
+  let hasContent = false;
+  editor.state.doc.descendants((node) => {
+    if (node.isAtom || node.type.name === 'table') {
+      hasContent = true;
+      return false;
+    }
+    return !hasContent;
+  });
+
+  return hasContent;
+};
+
 export default function App() {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [documentTitle, setDocumentTitle] = useState<string>('Untitled document');
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'failed'>('saved');
   const [wordCount, setWordCount] = useState<number>(0);
   const [charCount, setCharCount] = useState<number>(0);
+  const [hasDocumentContent, setHasDocumentContent] = useState(false);
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
 
   // Layout configuration
@@ -68,7 +83,6 @@ export default function App() {
 
   // Modal dialog states
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
   const [isTableDialogOpen, setIsTableDialogOpen] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -104,7 +118,7 @@ export default function App() {
     shouldRerenderOnTransaction: true,
     extensions: [
       StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
+        heading: { levels: [1, 2, 3, 4, 5, 6] },
       }),
       Underline,
       TextAlign.configure({
@@ -144,6 +158,7 @@ export default function App() {
       const words = text.trim() ? text.trim().split(/\s+/).length : 0;
       setWordCount(words);
       setCharCount(text.length);
+      setHasDocumentContent(documentHasContent(ed));
       setSaveStatus('unsaved');
 
       // Debounce autosave 1.5 seconds
@@ -183,6 +198,7 @@ export default function App() {
       const text = editor.getText();
       setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
       setCharCount(text.length);
+      setHasDocumentContent(documentHasContent(editor));
     }
   }, [editor]);
 
@@ -232,6 +248,7 @@ export default function App() {
     const text = editor.getText();
     setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
     setCharCount(text.length);
+    setHasDocumentContent(documentHasContent(editor));
   }, [editor]);
 
   /**
@@ -343,7 +360,7 @@ export default function App() {
 
   // Generate DOCX / PDF on the backend from the saved document
   const handleExportDocument = async (format: ExportFormat) => {
-    if (!editor) return;
+    if (!editor || !documentHasContent(editor)) return;
     setExportingFormat(format);
     try {
       const id = await saveDocumentToBackend(); // export exactly what is on screen
@@ -417,6 +434,7 @@ export default function App() {
           onOpenTemplates={() => setIsTemplatesModalOpen(true)}
           onExportDocument={handleExportDocument}
           exportingFormat={exportingFormat}
+          hasDocumentContent={hasDocumentContent}
           onUpdateDictationLanguage={(lang) =>
             setDictationSettings((prev) => ({ ...prev, language: lang }))
           }
@@ -457,8 +475,8 @@ export default function App() {
         )}
 
         {/* Document Work Area: Edit Tools Side Bar & Editor Card */}
-        {/* Phones: scrolls as a whole so the editor keeps a usable height; md+: side bar and document scroll separately */}
-        <div className="flex-1 min-h-0 flex flex-col md:flex-row p-1.5 sm:p-2 gap-1.5 sm:gap-2 overflow-y-auto md:overflow-hidden">
+        {/* Docked side bar and document editor card; inner writing canvas scrolls */}
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row p-1.5 sm:p-2 gap-1.5 sm:gap-2 overflow-hidden">
           {/* Integrated RAGSUITE Edit Tools Side Bar */}
           <RagsuiteToolbar
             editor={editor}
@@ -469,7 +487,7 @@ export default function App() {
           />
 
           {/* Document column: template controls + editor card */}
-          <div className="flex-1 min-w-0 flex flex-col gap-2.5 sm:gap-3.5 md:min-h-0 md:overflow-y-auto">
+          <div className="flex-1 min-w-0 flex flex-col h-full min-h-0 overflow-hidden">
             {/* RAGSUITE Main Document Card */}
             <RagsuiteEditorCard
               editor={editor}
@@ -477,6 +495,7 @@ export default function App() {
               wordCount={wordCount}
               charCount={charCount}
               layout={layout}
+              onUpdateZoom={(zoom) => setLayout((prev) => ({ ...prev, zoom }))}
               onClearDocument={handleClearDocument}
               onCopyText={handleCopyDocumentText}
               onPreview={() => setIsPreviewOpen(true)}
@@ -485,7 +504,7 @@ export default function App() {
                   ? {
                       fieldsCount: activeTemplate.fields.length,
                       activeField: getActiveTemplateField(editor),
-                      isDictating: dictationStatus === 'listening' || dictationStatus === 'transcribing',
+                      isDictating: dictationStatus === 'listening',
                       outOfSync: !documentMatchesTemplate(editor, activeTemplate.fields, activeTemplate),
                       onApplyTemplateChanges: handleApplyTemplateChanges,
                     }
@@ -503,7 +522,6 @@ export default function App() {
         interimText={interimText}
         audioLevel={audioLevel}
         language={dictationSettings.language}
-        engine={dictationSettings.engine}
         onStop={stopDictation}
       />
 
@@ -513,15 +531,6 @@ export default function App() {
         onClose={() => setIsSettingsModalOpen(false)}
         settings={dictationSettings}
         onSaveSettings={setDictationSettings}
-      />
-
-      <AudioFileUploadModal
-        isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        onInsertText={(text) => {
-          if (editor) editor.commands.insertContent(`${text} `);
-        }}
-        currentLanguage={dictationSettings.language}
       />
 
       <DocumentsModal

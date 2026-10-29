@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Mic, Cpu, Globe, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { X, Mic, Globe, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { DictationSettings } from '../../types';
 import { SUPPORTED_LANGUAGES } from '../../utils/punctuation';
 import { isBrowserSpeechSupported } from '../../services/speechRecognition';
@@ -38,7 +38,7 @@ export const DictationSettingsModal: React.FC<DictationSettingsModalProps> = ({
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#1e2c47] bg-[#0c1222]">
           <div className="flex items-center gap-2">
             <Mic className="w-5 h-5 text-blue-400" />
-            <h3 className="font-semibold text-white text-sm">Dictation & Model Settings</h3>
+            <h3 className="font-semibold text-white text-sm">Dictation Settings</h3>
           </div>
           <button
             onClick={onClose}
@@ -50,60 +50,25 @@ export const DictationSettingsModal: React.FC<DictationSettingsModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-5 text-xs text-neutral-300 max-h-[75vh] overflow-y-auto">
-          {/* Engine Selection */}
+          {/* Speech Recognition */}
           <div>
             <label className="block font-semibold text-white mb-2 flex items-center gap-1.5">
-              <Cpu className="w-4 h-4 text-blue-400" />
-              Speech Recognition Engine
+              <Mic className="w-4 h-4 text-blue-400" />
+              Speech Recognition
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Browser Web Speech */}
-              <div
-                onClick={() =>
-                  browserSupported &&
-                  setLocalSettings({ ...localSettings, engine: 'browser' })
-                }
-                className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                  localSettings.engine === 'browser'
-                    ? 'border-blue-500 bg-blue-950/40 ring-1 ring-blue-500/50'
-                    : 'border-[#1e2c47] hover:border-[#2b3c5a] bg-[#131b2e]'
-                } ${!browserSupported ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-white">Browser Web Speech</span>
-                  {localSettings.engine === 'browser' && (
-                    <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                  )}
-                </div>
-                <p className="text-[11px] text-neutral-400 leading-relaxed">
-                  Real-time continuous voice typing with instant streaming directly into the document.
-                </p>
-                {!browserSupported && (
-                  <span className="inline-block mt-1.5 text-[10px] text-red-400 font-medium">
-                    (Not supported in current browser)
-                  </span>
-                )}
+            <div className="p-3 rounded-lg border border-blue-500 bg-blue-950/40 ring-1 ring-blue-500/50">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium text-white">Browser Web Speech (default)</span>
+                <CheckCircle2 className="w-4 h-4 text-blue-400" />
               </div>
-
-              {/* Python Flask Backend */}
-              <div
-                onClick={() => setLocalSettings({ ...localSettings, engine: 'flask' })}
-                className={`p-3 rounded-lg border text-left cursor-pointer transition-all ${
-                  localSettings.engine === 'flask'
-                    ? 'border-blue-500 bg-blue-950/40 ring-1 ring-blue-500/50'
-                    : 'border-[#1e2c47] hover:border-[#2b3c5a] bg-[#131b2e]'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-white">Python Flask API</span>
-                  {localSettings.engine === 'flask' && (
-                    <CheckCircle2 className="w-4 h-4 text-blue-400" />
-                  )}
-                </div>
-                <p className="text-[11px] text-neutral-400 leading-relaxed">
-                  High-accuracy server-side transcription running on Flask `/api/transcribe` with Google / Whisper.
-                </p>
-              </div>
+              <p className="text-[11px] text-neutral-400 leading-relaxed">
+                Real-time continuous voice typing with instant streaming directly into the document.
+              </p>
+              {!browserSupported && (
+                <span className="inline-block mt-1.5 text-[10px] text-red-400 font-medium">
+                  (Not supported in current browser)
+                </span>
+              )}
             </div>
           </div>
 

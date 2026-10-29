@@ -6,7 +6,6 @@ import {
   Undo2,
   Redo2,
   FolderOpen,
-  Upload,
   Share2,
   Check,
   CloudCheck,
@@ -23,7 +22,6 @@ interface EditorHeaderProps {
   saveStatus: 'saved' | 'saving' | 'unsaved' | 'failed';
   onManualSave: () => void;
   onOpenDocumentsModal: () => void;
-  onOpenAudioUpload: () => void;
   editor: Editor | null;
 }
 
@@ -33,7 +31,6 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   saveStatus,
   onManualSave,
   onOpenDocumentsModal,
-  onOpenAudioUpload,
   editor,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -127,14 +124,6 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
             </button>
           </Tooltip>
 
-          <Tooltip content="Upload Audio File for Transcription (Flask)">
-            <button
-              onClick={onOpenAudioUpload}
-              className="p-1 rounded hover:bg-blue-600/70 text-blue-100 hover:text-white cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
         </div>
 
         {/* Document Title Input */}

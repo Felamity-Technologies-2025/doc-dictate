@@ -29,15 +29,8 @@ _load_dotenv(BASE_DIR / '.env')
 
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'word-dictate-dev-secret-key-2026')
-    UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', str(BASE_DIR / 'uploads'))
-    MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 25 * 1024 * 1024))  # 25 MB max
-    ALLOWED_EXTENSIONS = {'wav', 'mp3', 'm4a', 'ogg', 'webm', 'flac', 'aac'}
+    MAX_CONTENT_LENGTH = int(os.getenv('MAX_CONTENT_LENGTH', 25 * 1024 * 1024))
     DATABASE_PATH = os.getenv('DATABASE_PATH', str(BASE_DIR / 'documents.db'))
-
-    # Speech Recognition configuration
-    # Supported engines: 'google' (Google Speech API via SpeechRecognition), 'whisper'
-    DEFAULT_SPEECH_ENGINE = os.getenv('DEFAULT_SPEECH_ENGINE', 'google')
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
     # CORS
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*').split(',')
@@ -50,15 +43,9 @@ class Config:
     # Upper bound on extracted text sent to the LLM
     LLM_MAX_INPUT_CHARS = int(os.getenv('LLM_MAX_INPUT_CHARS', 40000))
 
-    # Active LLM client for template extraction: 'ragsuite' (ragsuite_client.py) or 'django' (djangoLLM_client.py)
+    # LLM client for template extraction: RAGSUITE (ragsuite_agent_client.py)
     LLM_CLIENT = os.getenv('LLM_CLIENT', 'ragsuite').strip().lower()
     RAGSUITE_ENDPOINT = os.getenv('RAGSUITE_ENDPOINT', 'http://localhost:5641/query-data/HOME')
     # Model loaded in RAGSUITE when it has none loaded (ids as listed by RAGSUITE's /api/eligible_models);
     # empty = select the model in the RAGSUITE app yourself
-    RAGSUITE_MODEL_ID = os.getenv('RAGSUITE_MODEL_ID', 'claude-haiku-4.5')
-    # Django LLM gateway (credentials are read by djangoLLM_client.py from the environment)
-    # Provider names must match the gateway's spelling (see /api/quota/): OpenAI, Gemini, Amazon Bedrock, Mistral
-    DJANGO_LLM_PROVIDER = os.getenv('DJANGO_LLM_PROVIDER', 'OpenAI')
-    DJANGO_LLM_MODEL = os.getenv('DJANGO_LLM_MODEL', 'gpt-5')
-    DJANGO_LLM_VISION_PROVIDER = os.getenv('DJANGO_LLM_VISION_PROVIDER', '') or DJANGO_LLM_PROVIDER
-    DJANGO_LLM_VISION_MODEL = os.getenv('DJANGO_LLM_VISION_MODEL', '') or DJANGO_LLM_MODEL
+    RAGSUITE_MODEL_ID = os.getenv('RAGSUITE_MODEL_ID', '')

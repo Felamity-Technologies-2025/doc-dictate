@@ -30,7 +30,6 @@ interface HomeTabProps {
   dictationSettings: DictationSettings;
   onToggleDictation: () => void;
   onOpenDictationSettings: () => void;
-  onOpenAudioUpload: () => void;
   onUpdateDictationLanguage: (lang: string) => void;
   onOpenFindReplace: () => void;
 }
@@ -52,7 +51,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({
   dictationSettings,
   onToggleDictation,
   onOpenDictationSettings,
-  onOpenAudioUpload,
   onUpdateDictationLanguage,
   onOpenFindReplace,
 }) => {
@@ -488,7 +486,6 @@ export const HomeTab: React.FC<HomeTabProps> = ({
             settings={dictationSettings}
             onToggleDictation={onToggleDictation}
             onOpenSettings={onOpenDictationSettings}
-            onOpenUpload={onOpenAudioUpload}
             onUpdateLanguage={onUpdateDictationLanguage}
           />
         </div>

@@ -6,11 +6,10 @@ A modern Microsoft Word-inspired document editor featuring real-time speech dict
 
 - **Microsoft Word Ribbon Interface**: Home, Insert, Layout, Review, and View tabs styled authentically.
 - **Dictate / Voice Typing (Centerpiece)**:
-  - Real-time continuous speech dictation using Web Speech API or Python Flask backend.
+  - Real-time continuous speech dictation using the browser Web Speech API.
   - Spoken punctuation parsing (period, full stop, comma, question mark, new line, etc.).
   - Live microphone volume waveform visualizer.
   - Multi-language support: English (US & India), Tamil (India), Hindi (India), Spanish, French, and German.
-- **Audio File Transcription**: Upload pre-recorded audio (.wav, .mp3, .m4a, .webm) to transcribe via the Flask backend.
 - **Document Management**: Auto-saving to persistent SQLite database, document renaming, and library management.
 - **Rich-Text Canvas**: Tables, Images, Links, Quotes, Headings, and Print Layout margins.
 

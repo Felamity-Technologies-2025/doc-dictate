@@ -1,25 +1,16 @@
-# Audio_Transcription Backend (Python Flask)
+# Document Editor Backend (Python Flask)
 
-A robust Python Flask microservice providing real speech-to-text audio transcription and persistent document storage (SQLite) for the Word-inspired Document Editor.
+A Python Flask backend providing persistent document storage and reusable template APIs for the document editor.
 
 ## Architecture
 
 - **Framework**: Flask with Flask-CORS for cross-origin requests.
-- **Speech Recognition Engine**:
-  - **Google Web Speech API** via Python `speech_recognition` (default, no API key required, supports English, Tamil, Hindi, Spanish, French, German, and 50+ languages).
-  - **OpenAI Whisper API** (optional, activated when `OPENAI_API_KEY` is provided).
-- **Audio Processing**: `pydub` and `ffmpeg` normalizing uploaded audio (WebM, WAV, MP3, M4A, OGG, FLAC) to 16kHz mono 16-bit PCM WAV.
 - **Persistence**: SQLite database (`documents.db`) storing document title, rich-text HTML/JSON content, word count, and timestamps.
 
 ## Setup Instructions
 
 ### 1. Prerequisites
 - Python 3.10+
-- FFmpeg (for audio transcoding)
-  - Ubuntu/Debian: `sudo apt install ffmpeg`
-  - macOS: `brew install ffmpeg`
-  - Windows: `winget install Gyan.FFmpeg` or download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)
-
 ### 2. Create Virtual Environment & Install Dependencies
 
 #### On Windows (PowerShell):
@@ -46,8 +37,6 @@ cp .env.example .env
 
 Optional settings:
 - `FLASK_PORT=5000`
-- `DEFAULT_SPEECH_ENGINE=google`
-- `OPENAI_API_KEY=your_key_here` (only needed if using Whisper)
 
 ### 4. Start the Backend Server
 ```bash
@@ -59,8 +48,7 @@ The server starts at `http://localhost:5000`.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/health` | Health status and engine metadata |
-| `POST` | `/api/transcribe` | Transcribes multipart audio file (`audio`, `language`, `engine`) |
+| `GET` | `/api/health` | Backend health and template upload metadata |
 | `GET` | `/api/documents` | List all saved documents |
 | `POST` | `/api/documents` | Create or save a new document |
 | `GET` | `/api/documents/<id>` | Fetch single document by ID |
@@ -81,8 +69,8 @@ The server starts at `http://localhost:5000`.
 
 Users upload a PDF or DOCX (letter, legal opinion, report...). The backend extracts PDF text with
 PyMuPDF (pages without a text layer are rendered to images and read by a vision model) or reads
-paragraph and table text from DOCX, then sends it to the Django LLM gateway through
-`djangoLLM_client.py` and asks for **structure only**: headings, field labels, their order and
+paragraph and table text from DOCX, then sends it to RAGSUITE through
+`ragsuite_agent_client.py` and asks for **structure only**: headings, field labels, their order and
 nesting. The JSON answer is validated and normalized (values such as `From: Giri Nadhan` are
 reduced to `From`) and saved in SQLite. No embeddings, vector store or retrieval are involved.
 
@@ -90,20 +78,16 @@ Opening a template in the editor shows each heading with an empty content area. 
 dictate into the active field (Tab / Shift+Tab moves between fields), add their own custom fields,
 save the completed document and download it as DOCX or PDF.
 
-### LLM gateway configuration
-Set in `Backend/.env` (see `.env.example`):
+### LLM configuration
+Set in `Backend/.env`:
 
 | Variable | Purpose |
 |---|---|
-| `DJANGO_LLM_BASE_URL` | Gateway URL |
-| `DJANGO_LLM_EMAIL`, `DJANGO_LLM_OTP` | Credentials for `POST /api/token/`; the client renews the JWT automatically |
-| `DJANGO_LLM_PROVIDER`, `DJANGO_LLM_MODEL` | Model used for extraction. Provider names are case-sensitive as listed by `/api/quota/` (`OpenAI`, `Gemini`, `Amazon Bedrock`, `Mistral`) |
-| `DJANGO_LLM_VISION_PROVIDER`, `DJANGO_LLM_VISION_MODEL` | Optional model for scanned PDFs |
+| `RAGSUITE_ENDPOINT` | RAGSUITE query endpoint (e.g. `http://localhost:5641/query-data/HOME`) |
+| `RAGSUITE_MODEL_ID` | Model loaded in RAGSUITE (e.g. `claude-haiku-4.5`) |
 | `TEMPLATE_PDF_MAX_BYTES`, `TEMPLATE_PDF_MAX_PAGES`, `TEMPLATE_OCR_MAX_PAGES`, `LLM_MAX_INPUT_CHARS` | Upload and processing limits |
 
-Credentials are only read on the backend; they are never sent to the frontend or logged.
-`GET /api/health` reports `llm_gateway_configured` so the UI can warn when they are missing.
-Quick check of the gateway: `python djangoLLM_client.py --text "Say ok"`.
+`GET /api/health` reports `llm_gateway_configured` so the UI can check availability.
 
 ### Database
 Tables are created/migrated automatically in the existing `documents.db`:
