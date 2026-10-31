@@ -10,7 +10,8 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # pkg_resources is unused; its runtime hook crashes on startup (jaraco.context -> missing 'backports')
+    excludes=['pkg_resources', 'jaraco', 'setuptools'],
     noarchive=False,
     optimize=0,
 )

@@ -3,7 +3,7 @@ import sys
 import logging
 import socket
 from urllib.parse import urlsplit
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify, send_file, Response, stream_with_context, render_template
 from flask_cors import CORS
 from config import Config
 from ragsuite_agent_client import ragsuite_agent_bp
@@ -61,6 +61,11 @@ def create_app():
             'llm_gateway_configured': get_llm_client().is_configured,
             'template_max_upload_mb': Config.TEMPLATE_PDF_MAX_BYTES // (1024 * 1024),
         }), 200
+    
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def home(path):
+        return render_template("index.html")
 
     # Error Handlers
     @app.errorhandler(400)
