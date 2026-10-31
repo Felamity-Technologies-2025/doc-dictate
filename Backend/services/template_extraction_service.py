@@ -119,6 +119,18 @@ def _is_transient_failure(response) -> bool:
 
 # --------------------------------------------------------------------- parsing
 
+def _print_llm_response(label: str, attempt: int, response) -> None:
+    """Console trace of one gateway call: outcome, error/status and the start of the raw answer."""
+    if isinstance(response, dict) and 'content' in response:
+        content = response['content']
+        text = content if isinstance(content, str) else json.dumps(content, default=str)
+        print(f"[LLM:{label}] attempt {attempt + 1} OK - {len(text)} chars returned", flush=True)
+        print(f"[LLM:{label}] response preview: {text[:500]!r}", flush=True)
+        print(f"[LLM:{label}] response tail: {text[-200:]!r}", flush=True)
+    else:
+        print(f"[LLM:{label}] attempt {attempt + 1} FAILED - raw response: {response!r}", flush=True)
+
+
 def _response_text(response) -> str:
     """Pull the assistant text out of a gateway response or raise ExtractionError."""
     if not isinstance(response, dict):
@@ -390,9 +402,12 @@ def extract_template_structure(pdf_bytes: bytes, filename: str,
             user = {'role': 'user', 'content': _build_user_prompt(filename, pdf, text, truncated, 0)}
             logger.info("Template extraction via text model: %s chars from %s page(s)", len(text), pdf.page_count)
             for attempt in range(2):
+                print(f"[LLM:pdf-text] sending {len(user['content'])} prompt chars to RAGSUITE "
+                      f"(model: {getattr(client, 'model_id', '') or 'already loaded'})", flush=True)
                 response = client.query_llm(
-                    [system, user], complexity_score=0.5,
+                    [system, user], complexity_score=0.7,
                 )
+                _print_llm_response('pdf-text', attempt, response)
                 if not _is_transient_failure(response):
                     break
                 logger.warning("LLM gateway call failed transiently (%s); retrying",
@@ -474,9 +489,12 @@ def extract_template_structure_from_docx(docx_bytes: bytes, filename: str,
     with _client_lock:
         response = None
         for attempt in range(2):
+            print(f"[LLM:docx-text] sending {len(user['content'])} prompt chars to RAGSUITE "
+                  f"(model: {getattr(client, 'model_id', '') or 'already loaded'})", flush=True)
             response = client.query_llm(
-                [system, user], complexity_score=0.5,
+                [system, user], complexity_score=0.7,
             )
+            _print_llm_response('docx-text', attempt, response)
             if not _is_transient_failure(response):
                 break
             logger.warning("LLM gateway call failed transiently (%s); retrying",

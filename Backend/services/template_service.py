@@ -1,27 +1,26 @@
 """
 Reusable document templates (headings/field definitions) stored in the
-application's existing SQLite database.
+application's JSON data file.
 
-Tables
-------
-templates        one row per uploaded template
+Collections
+-----------
+templates        one record per uploaded template
 template_fields  ordered, optionally nested headings/labels of a template;
                  `is_custom` marks user-added fields vs. LLM-extracted ones
+template_images  pictures of the source document (bytes stored base64-encoded)
 
-Completed documents stay in the existing `documents` table and reference a
-template through `documents.template_id` (see DocumentService). They are
+Completed documents stay in the `documents` collection and reference a
+template through `template_id` (see DocumentService). They are
 never deleted together with a template.
 """
 import logging
-import os
-import sqlite3
+import base64
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from config import Config
-# Imported for its side effect: guarantees the documents table + template_id column exist first
-from services.document_service import document_service  # noqa: F401
+from services.json_store import get_store
 
 logger = logging.getLogger(__name__)
 
@@ -75,91 +74,14 @@ def clean_template_name(value) -> str:
 class TemplateService:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or Config.DATABASE_PATH
-        self._init_db()
-
-    def _get_connection(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
-
-    def _init_db(self):
-        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-        with self._get_connection() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS templates (
-                    id TEXT PRIMARY KEY,
-                    template_name TEXT NOT NULL,
-                    original_filename TEXT,
-                    document_type TEXT,
-                    extraction_method TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS template_fields (
-                    id TEXT PRIMARY KEY,
-                    template_id TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
-                    heading TEXT NOT NULL,
-                    field_type TEXT NOT NULL DEFAULT 'field'
-                        CHECK (field_type IN ('field', 'section', 'paragraph')),
-                    field_order INTEGER NOT NULL,
-                    parent_field_id TEXT REFERENCES template_fields(id) ON DELETE SET NULL,
-                    is_custom INTEGER NOT NULL DEFAULT 0 CHECK (is_custom IN (0, 1)),
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_template_fields_template ON template_fields(template_id, field_order)"
-            )
-            # Fields sharing a table_id are the column headings of one table in the source document
-            columns = {row[1] for row in conn.execute("PRAGMA table_info(template_fields)")}
-            if 'table_id' not in columns:
-                conn.execute("ALTER TABLE template_fields ADD COLUMN table_id TEXT")
-            # Horizontal placement of the heading in the source document (NULL = left)
-            if 'align' not in columns:
-                conn.execute("ALTER TABLE template_fields ADD COLUMN align TEXT")
-            # Source page of the heading and its vertical position on that page (fraction, 0 = top)
-            if 'page' not in columns:
-                conn.execute("ALTER TABLE template_fields ADD COLUMN page INTEGER")
-            if 'pos_y' not in columns:
-                conn.execute("ALTER TABLE template_fields ADD COLUMN pos_y REAL")
-            # Page geometry of the source document (points); NULL for templates without layout
-            template_columns = {row[1] for row in conn.execute("PRAGMA table_info(templates)")}
-            for column, kind in (('page_count', 'INTEGER'), ('page_width', 'REAL'), ('page_height', 'REAL')):
-                if column not in template_columns:
-                    conn.execute(f"ALTER TABLE templates ADD COLUMN {column} {kind}")
-            # Pictures (logos, banners...) of the source document with their placement as page fractions.
-            # Not cascaded: documents created from a template keep showing its pictures after it is deleted.
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS template_images (
-                    id TEXT PRIMARY KEY,
-                    template_id TEXT NOT NULL,
-                    page INTEGER NOT NULL,
-                    x REAL NOT NULL,
-                    y REAL NOT NULL,
-                    w REAL NOT NULL,
-                    h REAL NOT NULL,
-                    mime TEXT NOT NULL,
-                    data BLOB NOT NULL,
-                    created_at TEXT NOT NULL
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_template_images_template ON template_images(template_id, page, y)"
-            )
-            conn.commit()
+        self.store = get_store(self.db_path)
 
     # ------------------------------------------------------------------ helpers
 
     @staticmethod
-    def _field_rows(conn, template_id: str) -> List[sqlite3.Row]:
-        return conn.execute(
-            "SELECT * FROM template_fields WHERE template_id = ? ORDER BY field_order, created_at",
-            (template_id,),
-        ).fetchall()
+    def _field_rows(data: dict, template_id: str) -> List[Dict]:
+        rows = [f for f in data['template_fields'] if f['template_id'] == template_id]
+        return sorted(rows, key=lambda f: (f['field_order'], f['created_at']))
 
     @staticmethod
     def _serialize_fields(rows) -> List[Dict]:
@@ -180,26 +102,28 @@ class TemplateService:
                 'parent_field_id': row['parent_field_id'],
                 'level': level,
                 'is_custom': bool(row['is_custom']),
-                'table_id': row['table_id'],
-                'align': row['align'],
-                'page': row['page'],
-                'pos_y': row['pos_y'],
+                'table_id': row.get('table_id'),
+                'align': row.get('align'),
+                'page': row.get('page'),
+                'pos_y': row.get('pos_y'),
                 'created_at': row['created_at'],
                 'updated_at': row['updated_at'],
             })
         return fields
 
     @staticmethod
-    def _renumber(conn, template_id: str, ordered_ids: List[str], now: str) -> None:
+    def _renumber(data: dict, template_id: str, ordered_ids: List[str], now: str) -> None:
+        by_id = {f['id']: f for f in data['template_fields'] if f['template_id'] == template_id}
         for index, field_id in enumerate(ordered_ids, start=1):
-            conn.execute(
-                "UPDATE template_fields SET field_order = ? WHERE id = ? AND template_id = ? AND field_order != ?",
-                (index, field_id, template_id, index),
-            )
-        conn.execute("UPDATE templates SET updated_at = ? WHERE id = ?", (now, template_id))
+            if field_id in by_id:
+                by_id[field_id]['field_order'] = index
+        for template in data['templates']:
+            if template['id'] == template_id:
+                template['updated_at'] = now
 
-    def _require_template(self, conn, template_id: str) -> sqlite3.Row:
-        row = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,)).fetchone()
+    @staticmethod
+    def _require_template(data: dict, template_id: str) -> Dict:
+        row = next((t for t in data['templates'] if t['id'] == template_id), None)
         if not row:
             raise TemplateNotFoundError(f'Template {template_id} not found.')
         return row
@@ -237,6 +161,22 @@ class TemplateService:
                 break
         return end
 
+    @staticmethod
+    def _build_template(data: dict, row: Dict, rows: Optional[List[Dict]] = None) -> Dict:
+        """Template record with its derived counts (and, if `rows` is given, fields + images)."""
+        template_id = row['id']
+        template = dict(row)
+        fields = [f for f in data['template_fields'] if f['template_id'] == template_id]
+        template['field_count'] = len(fields)
+        template['custom_field_count'] = sum(1 for f in fields if f['is_custom'])
+        template['document_count'] = sum(1 for d in data['documents'] if d.get('template_id') == template_id)
+        if rows is not None:
+            template['fields'] = TemplateService._serialize_fields(rows)
+            images = [i for i in data['template_images'] if i['template_id'] == template_id]
+            images.sort(key=lambda i: (i['page'], i['y'], i['x']))
+            template['images'] = [{k: i[k] for k in ('id', 'page', 'x', 'y', 'w', 'h', 'mime')} for i in images]
+        return template
+
     # ------------------------------------------------------------------ templates
 
     def create_template(self, template_name: str, fields: List[Dict], original_filename: str = None,
@@ -257,104 +197,93 @@ class TemplateService:
         table_ids: Dict = {}
         # Source page numbers are renumbered 1..n over the pages that hold content
         page_numbers = {number: index for index, number in enumerate((pages or {}).get('numbers') or [], start=1)}
-        conn = self._get_connection()
-        try:
-            with conn:  # one transaction: all-or-nothing
-                conn.execute(
-                    """INSERT INTO templates (id, template_name, original_filename, document_type,
-                                              extraction_method, created_at, updated_at,
-                                              page_count, page_width, page_height)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (template_id, name, original_filename, document_type, extraction_method, now, now,
-                     len(page_numbers) or None, (pages or {}).get('width'), (pages or {}).get('height')),
+
+        with self.store.transaction() as data:  # all-or-nothing: nothing is saved if validation fails
+            data['templates'].append({
+                'id': template_id,
+                'template_name': name,
+                'original_filename': original_filename,
+                'document_type': document_type,
+                'extraction_method': extraction_method,
+                'created_at': now,
+                'updated_at': now,
+                'page_count': len(page_numbers) or None,
+                'page_width': (pages or {}).get('width'),
+                'page_height': (pages or {}).get('height'),
+            })
+            for image in (images or []) if page_numbers else []:
+                if image.page not in page_numbers:
+                    continue
+                data['template_images'].append({
+                    'id': str(uuid.uuid4()),
+                    'template_id': template_id,
+                    'page': page_numbers[image.page],
+                    'x': image.x,
+                    'y': image.y,
+                    'w': image.w,
+                    'h': image.h,
+                    'mime': image.mime,
+                    'data': base64.b64encode(image.data).decode('ascii'),
+                    'created_at': now,
+                })
+            for index, field in enumerate(fields):
+                parent_index = field.get('parent_index')
+                parent_id = (
+                    field_ids[parent_index]
+                    if isinstance(parent_index, int) and 0 <= parent_index < index
+                    else None
                 )
-                for image in (images or []) if page_numbers else []:
-                    if image.page not in page_numbers:
-                        continue
-                    conn.execute(
-                        """INSERT INTO template_images (id, template_id, page, x, y, w, h, mime, data, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (str(uuid.uuid4()), template_id, page_numbers[image.page], image.x, image.y, image.w,
-                         image.h, image.mime, sqlite3.Binary(image.data), now),
-                    )
-                for index, field in enumerate(fields):
-                    parent_index = field.get('parent_index')
-                    parent_id = (
-                        field_ids[parent_index]
-                        if isinstance(parent_index, int) and 0 <= parent_index < index
-                        else None
-                    )
-                    table_key = field.get('table_key')
-                    table_id = table_ids.setdefault(table_key, str(uuid.uuid4())) if table_key is not None else None
-                    conn.execute(
-                        """INSERT INTO template_fields (id, template_id, heading, field_type, field_order,
-                                                        parent_field_id, is_custom, created_at, updated_at, table_id,
-                                                        align, page, pos_y)
-                           VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)""",
-                        (field_ids[index], template_id, clean_heading(field['heading']),
-                         clean_field_type(field.get('field_type'), 'section'), index + 1, parent_id, now, now,
-                         table_id, field.get('align') if field.get('align') in ALIGNMENTS else None,
-                         page_numbers.get(field.get('page')) if page_numbers else None,
-                         field.get('pos_y') if page_numbers else None),
-                    )
-        finally:
-            conn.close()
+                table_key = field.get('table_key')
+                table_id = table_ids.setdefault(table_key, str(uuid.uuid4())) if table_key is not None else None
+                data['template_fields'].append({
+                    'id': field_ids[index],
+                    'template_id': template_id,
+                    'heading': clean_heading(field['heading']),
+                    'field_type': clean_field_type(field.get('field_type'), 'section'),
+                    'field_order': index + 1,
+                    'parent_field_id': parent_id,
+                    'is_custom': 0,
+                    'created_at': now,
+                    'updated_at': now,
+                    'table_id': table_id,
+                    'align': field.get('align') if field.get('align') in ALIGNMENTS else None,
+                    'page': page_numbers.get(field.get('page')) if page_numbers else None,
+                    'pos_y': field.get('pos_y') if page_numbers else None,
+                })
         return self.get_template(template_id)
 
     def list_templates(self) -> List[Dict]:
-        with self._get_connection() as conn:
-            rows = conn.execute("""
-                SELECT t.*,
-                       (SELECT COUNT(*) FROM template_fields f WHERE f.template_id = t.id) AS field_count,
-                       (SELECT COUNT(*) FROM template_fields f WHERE f.template_id = t.id AND f.is_custom = 1)
-                           AS custom_field_count,
-                       (SELECT COUNT(*) FROM documents d WHERE d.template_id = t.id) AS document_count
-                FROM templates t
-                ORDER BY t.updated_at DESC
-            """).fetchall()
-            return [dict(row) for row in rows]
+        with self.store.read() as data:
+            templates = [self._build_template(data, row) for row in data['templates']]
+        return sorted(templates, key=lambda t: t['updated_at'], reverse=True)
 
     def get_template(self, template_id: str) -> Optional[Dict]:
-        with self._get_connection() as conn:
-            row = conn.execute("SELECT * FROM templates WHERE id = ?", (template_id,)).fetchone()
+        with self.store.read() as data:
+            row = next((t for t in data['templates'] if t['id'] == template_id), None)
             if not row:
                 return None
-            template = dict(row)
-            template['fields'] = self._serialize_fields(self._field_rows(conn, template_id))
-            template['field_count'] = len(template['fields'])
-            template['custom_field_count'] = sum(1 for f in template['fields'] if f['is_custom'])
-            template['document_count'] = conn.execute(
-                "SELECT COUNT(*) FROM documents WHERE template_id = ?", (template_id,)
-            ).fetchone()[0]
-            template['images'] = [dict(r) for r in conn.execute(
-                "SELECT id, page, x, y, w, h, mime FROM template_images WHERE template_id = ? ORDER BY page, y, x",
-                (template_id,),
-            ).fetchall()]
-            return template
+            return self._build_template(data, row, self._field_rows(data, template_id))
+
+    def _find_image(self, image_id: str, template_id: str = None) -> Optional[Dict]:
+        with self.store.read() as data:
+            row = next((i for i in data['template_images']
+                        if i['id'] == image_id and (template_id is None or i['template_id'] == template_id)), None)
+            return {'mime': row['mime'], 'data': base64.b64decode(row['data'])} if row else None
 
     def get_image(self, template_id: str, image_id: str) -> Optional[Dict]:
         """{mime, data} of one template picture, or None."""
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT mime, data FROM template_images WHERE id = ? AND template_id = ?", (image_id, template_id)
-            ).fetchone()
-            return {'mime': row['mime'], 'data': bytes(row['data'])} if row else None
+        return self._find_image(image_id, template_id)
 
     def get_image_by_id(self, image_id: str) -> Optional[Dict]:
         """Picture lookup for exports, which only know the image id stored in the document."""
-        with self._get_connection() as conn:
-            row = conn.execute("SELECT mime, data FROM template_images WHERE id = ?", (image_id,)).fetchone()
-            return {'mime': row['mime'], 'data': bytes(row['data'])} if row else None
+        return self._find_image(image_id)
 
     def rename_template(self, template_id: str, template_name: str) -> Dict:
         name = clean_template_name(template_name)
-        with self._get_connection() as conn:
-            self._require_template(conn, template_id)
-            conn.execute(
-                "UPDATE templates SET template_name = ?, updated_at = ? WHERE id = ?",
-                (name, _now(), template_id),
-            )
-            conn.commit()
+        with self.store.transaction() as data:
+            row = self._require_template(data, template_id)
+            row['template_name'] = name
+            row['updated_at'] = _now()
         return self.get_template(template_id)
 
     def delete_template(self, template_id: str) -> int:
@@ -363,25 +292,23 @@ class TemplateService:
         are kept (their content is self-contained); only their link is cleared.
         Returns the number of documents that were detached.
         """
-        conn = self._get_connection()
-        try:
-            with conn:
-                self._require_template(conn, template_id)
-                detached = conn.execute(
-                    "UPDATE documents SET template_id = NULL WHERE template_id = ?", (template_id,)
-                ).rowcount
-                conn.execute("DELETE FROM template_fields WHERE template_id = ?", (template_id,))
-                if not detached:
-                    # Pictures are kept while documents created from the template still show them
-                    conn.execute("DELETE FROM template_images WHERE template_id = ?", (template_id,))
-                conn.execute("DELETE FROM templates WHERE id = ?", (template_id,))
+        with self.store.transaction() as data:
+            self._require_template(data, template_id)
+            detached = 0
+            for doc in data['documents']:
+                if doc.get('template_id') == template_id:
+                    doc['template_id'] = None
+                    detached += 1
+            data['template_fields'] = [f for f in data['template_fields'] if f['template_id'] != template_id]
+            if not detached:
+                # Pictures are kept while documents created from the template still show them
+                data['template_images'] = [i for i in data['template_images'] if i['template_id'] != template_id]
+            data['templates'] = [t for t in data['templates'] if t['id'] != template_id]
             return detached
-        finally:
-            conn.close()
 
     def template_exists(self, template_id: str) -> bool:
-        with self._get_connection() as conn:
-            return conn.execute("SELECT 1 FROM templates WHERE id = ?", (template_id,)).fetchone() is not None
+        with self.store.read() as data:
+            return any(t['id'] == template_id for t in data['templates'])
 
     # ------------------------------------------------------------------ fields
 
@@ -397,94 +324,86 @@ class TemplateService:
         now = _now()
         new_id = str(uuid.uuid4())
 
-        conn = self._get_connection()
-        try:
-            with conn:
-                self._require_template(conn, template_id)
-                rows = self._field_rows(conn, template_id)
-                ids = [row['id'] for row in rows]
-                parent_field_id = self._validate_parent(rows, parent_field_id)
+        with self.store.transaction() as data:
+            self._require_template(data, template_id)
+            rows = self._field_rows(data, template_id)
+            ids = [row['id'] for row in rows]
+            parent_field_id = self._validate_parent(rows, parent_field_id)
 
-                if position is not None:
-                    if not isinstance(position, int) or isinstance(position, bool):
-                        raise TemplateValidationError('Position must be an integer.')
-                    insert_at = min(max(position, 1), len(ids) + 1) - 1
-                elif after_field_id:
-                    if after_field_id not in ids:
-                        raise TemplateValidationError('The field to insert after does not belong to this template.')
-                    insert_at = self._subtree_end_index(rows, after_field_id) + 1
-                elif parent_field_id:
-                    insert_at = self._subtree_end_index(rows, parent_field_id) + 1
-                else:
-                    insert_at = len(ids)
+            if position is not None:
+                if not isinstance(position, int) or isinstance(position, bool):
+                    raise TemplateValidationError('Position must be an integer.')
+                insert_at = min(max(position, 1), len(ids) + 1) - 1
+            elif after_field_id:
+                if after_field_id not in ids:
+                    raise TemplateValidationError('The field to insert after does not belong to this template.')
+                insert_at = self._subtree_end_index(rows, after_field_id) + 1
+            elif parent_field_id:
+                insert_at = self._subtree_end_index(rows, parent_field_id) + 1
+            else:
+                insert_at = len(ids)
 
-                # A new field belongs to the page of the field it follows (or the first field's page)
-                neighbour = rows[insert_at - 1] if insert_at > 0 else (rows[0] if rows else None)
-                page = neighbour['page'] if neighbour is not None else None
-                pos_y = neighbour['pos_y'] if neighbour is not None else None
+            # A new field belongs to the page of the field it follows (or the first field's page)
+            neighbour = rows[insert_at - 1] if insert_at > 0 else (rows[0] if rows else None)
+            page = neighbour.get('page') if neighbour is not None else None
+            pos_y = neighbour.get('pos_y') if neighbour is not None else None
 
-                # A field added between two columns of a table becomes a column of that table
-                table_id = None
-                if 0 < insert_at < len(rows):
-                    before, after = rows[insert_at - 1]['table_id'], rows[insert_at]['table_id']
-                    if before and before == after:
-                        table_id = before
+            # A field added between two columns of a table becomes a column of that table
+            table_id = None
+            if 0 < insert_at < len(rows):
+                before, after = rows[insert_at - 1].get('table_id'), rows[insert_at].get('table_id')
+                if before and before == after:
+                    table_id = before
 
-                conn.execute(
-                    """INSERT INTO template_fields (id, template_id, heading, field_type, field_order,
-                                                    parent_field_id, is_custom, created_at, updated_at, table_id,
-                                                    page, pos_y)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (new_id, template_id, heading, field_type, len(ids) + 1, parent_field_id,
-                     1 if is_custom else 0, now, now, table_id, page, pos_y),
-                )
-                ids.insert(insert_at, new_id)
-                self._renumber(conn, template_id, ids, now)
-        finally:
-            conn.close()
+            data['template_fields'].append({
+                'id': new_id,
+                'template_id': template_id,
+                'heading': heading,
+                'field_type': field_type,
+                'field_order': len(ids) + 1,
+                'parent_field_id': parent_field_id,
+                'is_custom': 1 if is_custom else 0,
+                'created_at': now,
+                'updated_at': now,
+                'table_id': table_id,
+                'align': None,
+                'page': page,
+                'pos_y': pos_y,
+            })
+            ids.insert(insert_at, new_id)
+            self._renumber(data, template_id, ids, now)
         return self._get_field(template_id, new_id)
 
     def update_field(self, template_id: str, field_id: str, heading: str = None, field_type: str = None,
                      position: int = None, parent_field_id=...) -> Dict:
         """Rename / retype / move / re-parent a field. `parent_field_id=None` moves it to the top level."""
         now = _now()
-        conn = self._get_connection()
-        try:
-            with conn:
-                self._require_template(conn, template_id)
-                rows = self._field_rows(conn, template_id)
-                current = next((row for row in rows if row['id'] == field_id), None)
-                if not current:
-                    raise TemplateNotFoundError(f'Field {field_id} not found in template {template_id}.')
+        with self.store.transaction() as data:
+            self._require_template(data, template_id)
+            rows = self._field_rows(data, template_id)
+            current = next((row for row in rows if row['id'] == field_id), None)
+            if not current:
+                raise TemplateNotFoundError(f'Field {field_id} not found in template {template_id}.')
 
-                updates, params = [], []
-                if heading is not None:
-                    updates.append("heading = ?")
-                    params.append(clean_heading(heading))
-                if field_type is not None:
-                    updates.append("field_type = ?")
-                    params.append(clean_field_type(field_type))
-                if parent_field_id is not ...:
-                    updates.append("parent_field_id = ?")
-                    params.append(self._validate_parent(rows, parent_field_id, field_id))
-                if updates:
-                    updates.append("updated_at = ?")
-                    params.extend([now, field_id, template_id])
-                    conn.execute(
-                        f"UPDATE template_fields SET {', '.join(updates)} WHERE id = ? AND template_id = ?",
-                        params,
-                    )
+            updates = {}
+            if heading is not None:
+                updates['heading'] = clean_heading(heading)
+            if field_type is not None:
+                updates['field_type'] = clean_field_type(field_type)
+            if parent_field_id is not ...:
+                updates['parent_field_id'] = self._validate_parent(rows, parent_field_id, field_id)
+            if updates:
+                current.update(updates)
+                current['updated_at'] = now
 
-                if position is not None:
-                    if not isinstance(position, int) or isinstance(position, bool):
-                        raise TemplateValidationError('Position must be an integer.')
-                    ids = [row['id'] for row in rows if row['id'] != field_id]
-                    ids.insert(min(max(position, 1), len(ids) + 1) - 1, field_id)
-                    self._renumber(conn, template_id, ids, now)
-                elif updates:
-                    conn.execute("UPDATE templates SET updated_at = ? WHERE id = ?", (now, template_id))
-        finally:
-            conn.close()
+            if position is not None:
+                if not isinstance(position, int) or isinstance(position, bool):
+                    raise TemplateValidationError('Position must be an integer.')
+                ids = [row['id'] for row in rows if row['id'] != field_id]
+                ids.insert(min(max(position, 1), len(ids) + 1) - 1, field_id)
+                self._renumber(data, template_id, ids, now)
+            elif updates:
+                self._require_template(data, template_id)['updated_at'] = now
         return self._get_field(template_id, field_id)
 
     def delete_field(self, template_id: str, field_id: str) -> None:
@@ -493,25 +412,22 @@ class TemplateService:
         removed field's parent. Saved documents are not modified.
         """
         now = _now()
-        conn = self._get_connection()
-        try:
-            with conn:
-                self._require_template(conn, template_id)
-                rows = self._field_rows(conn, template_id)
-                current = next((row for row in rows if row['id'] == field_id), None)
-                if not current:
-                    raise TemplateNotFoundError(f'Field {field_id} not found in template {template_id}.')
-                if len(rows) == 1:
-                    raise TemplateValidationError('A template must keep at least one field.')
-                conn.execute(
-                    "UPDATE template_fields SET parent_field_id = ?, updated_at = ? "
-                    "WHERE parent_field_id = ? AND template_id = ?",
-                    (current['parent_field_id'], now, field_id, template_id),
-                )
-                conn.execute("DELETE FROM template_fields WHERE id = ? AND template_id = ?", (field_id, template_id))
-                self._renumber(conn, template_id, [row['id'] for row in rows if row['id'] != field_id], now)
-        finally:
-            conn.close()
+        with self.store.transaction() as data:
+            self._require_template(data, template_id)
+            rows = self._field_rows(data, template_id)
+            current = next((row for row in rows if row['id'] == field_id), None)
+            if not current:
+                raise TemplateNotFoundError(f'Field {field_id} not found in template {template_id}.')
+            if len(rows) == 1:
+                raise TemplateValidationError('A template must keep at least one field.')
+            for row in rows:
+                if row['parent_field_id'] == field_id:
+                    row['parent_field_id'] = current['parent_field_id']
+                    row['updated_at'] = now
+            data['template_fields'] = [
+                f for f in data['template_fields'] if not (f['id'] == field_id and f['template_id'] == template_id)
+            ]
+            self._renumber(data, template_id, [row['id'] for row in rows if row['id'] != field_id], now)
 
     def _get_field(self, template_id: str, field_id: str) -> Dict:
         template = self.get_template(template_id)

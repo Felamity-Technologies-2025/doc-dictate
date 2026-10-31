@@ -79,8 +79,7 @@ class RagsuiteAgentClient:
     def query_llm(self, messages, **kwargs):
         payload = {
             "prompt": messages,
-            "n_ctx": kwargs.get("n_ctx", 10000),
-            "max_tokens": kwargs.get("max_tokens", 1500),
+            "n_ctx": kwargs.get("n_ctx", 1000000),
             "temperature": kwargs.get("temperature", 0.2),
             "top_k": kwargs.get("top_k", 40),
             "top_p": kwargs.get("top_p", 0.9),
@@ -93,7 +92,8 @@ class RagsuiteAgentClient:
             "web_search_results": kwargs.get("web_search_results", ""),
             "exclude_folders": kwargs.get("exclude_folders", ""),
             "storage_type": kwargs.get("storage_type", "local"),
-            "cloud_index_data": kwargs.get("cloud_index_data", {})
+            "cloud_index_data": kwargs.get("cloud_index_data", {}),
+            "masking_status": kwargs.get("masking_status", False),
         }
 
         try:

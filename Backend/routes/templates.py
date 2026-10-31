@@ -65,7 +65,7 @@ def _handle_service_errors(fn):
             return _error(str(e), 404)
         except Exception:
             logger.error("Template API error in %s", fn.__name__, exc_info=True)
-            return _error('A database error occurred while processing the template.', 500)
+            return _error('An error occurred while processing the template.', 500)
     wrapper.__name__ = fn.__name__
     return wrapper
 
@@ -106,6 +106,7 @@ def upload_template():
     if not data:
         return _error('The uploaded file is empty.', 400)
 
+    print(f"[UPLOAD] received '{filename}' ({extension}, {len(data)} bytes); extracting template structure", flush=True)
     try:
         result = (
             extract_template_structure(data, filename)
@@ -113,13 +114,18 @@ def upload_template():
             else extract_template_structure_from_docx(data, filename)
         )
     except PdfProcessingError as e:
+        print(f"[UPLOAD] PDF processing failed (422): {e}", flush=True)
         return _error(str(e), 422)
     except ExtractionError as e:
+        print(f"[UPLOAD] extraction failed ({e.status_code}): {e.message}", flush=True)
         return _error(e.message, e.status_code)
-    except Exception:
+    except Exception as e:
+        print(f"[UPLOAD] unexpected extraction failure (500): {type(e).__name__}: {e}", flush=True)
         logger.error("Unexpected template extraction failure", exc_info=True)
         return _error('The template file could not be processed.', 500)
 
+    print(f"[UPLOAD] extraction OK via '{result.method}': {len(result.fields)} field(s), "
+          f"suggested name {result.template_name!r}", flush=True)
     override = (request.form.get('template_name') or '').strip()
     fallback = os.path.splitext(upload.filename)[0].strip() or 'Untitled Template'
     name = override or result.template_name or fallback
@@ -135,11 +141,14 @@ def upload_template():
             images=result.images,
         )
     except TemplateValidationError as e:
+        print(f"[UPLOAD] template validation failed (400): {e}", flush=True)
         return _error(str(e), 400)
-    except Exception:
+    except Exception as e:
+        print(f"[UPLOAD] saving template failed (500): {type(e).__name__}: {e}", flush=True)
         logger.error("Failed to save extracted template", exc_info=True)
-        return _error('The template could not be saved to the database.', 500)
+        return _error('The template could not be saved.', 500)
 
+    print(f"[UPLOAD] template saved: id={template['id']}, {template['field_count']} field(s)", flush=True)
     return jsonify({
         'success': True,
         'template': template,

@@ -3,6 +3,8 @@
 !.env.example
 
 *.db
+documents.json
+*.json.tmp
 *.db-bak*
 *.db.bak*
 __pycache__/

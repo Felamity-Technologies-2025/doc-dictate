@@ -5,7 +5,7 @@ A Python Flask backend providing persistent document storage and reusable templa
 ## Architecture
 
 - **Framework**: Flask with Flask-CORS for cross-origin requests.
-- **Persistence**: SQLite database (`documents.db`) storing document title, rich-text HTML/JSON content, word count, and timestamps.
+- **Persistence**: JSON file (`documents.json`, in the RAGSUITE agent folder, see `config.py`) storing document title, rich-text HTML/JSON content, word count, and timestamps.
 
 ## Setup Instructions
 
@@ -27,22 +27,16 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Environment Configuration
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-
-`config.py` loads `Backend/.env` automatically at startup (real environment variables take precedence).
-
-Optional settings:
-- `FLASK_PORT=5000`
+### 3. Configuration
+There is no `.env` file. All settings are hardcoded in `config.py` (edit it to change them).
+The data file is stored per user under the RAGSUITE agent folder
+(macOS: `~/Library/Application Support/RAGSUITE/Agents/agent_003/documents.json`).
 
 ### 4. Start the Backend Server
 ```bash
 python app.py
 ```
-The server starts at `http://localhost:5000`.
+The server picks the first free port from 5643 and prints it (`Running on port: ...`).
 
 ## API Endpoints
 
@@ -72,14 +66,14 @@ PyMuPDF (pages without a text layer are rendered to images and read by a vision 
 paragraph and table text from DOCX, then sends it to RAGSUITE through
 `ragsuite_agent_client.py` and asks for **structure only**: headings, field labels, their order and
 nesting. The JSON answer is validated and normalized (values such as `From: Giri Nadhan` are
-reduced to `From`) and saved in SQLite. No embeddings, vector store or retrieval are involved.
+reduced to `From`) and saved in the JSON file. No embeddings, vector store or retrieval are involved.
 
 Opening a template in the editor shows each heading with an empty content area. Users type or
 dictate into the active field (Tab / Shift+Tab moves between fields), add their own custom fields,
 save the completed document and download it as DOCX or PDF.
 
 ### LLM configuration
-Set in `Backend/.env`:
+Set in `Backend/config.py`:
 
 | Variable | Purpose |
 |---|---|
@@ -89,11 +83,15 @@ Set in `Backend/.env`:
 
 `GET /api/health` reports `llm_gateway_configured` so the UI can check availability.
 
-### Database
-Tables are created/migrated automatically in the existing `documents.db`:
-- `templates` (id, template_name, original_filename, document_type, extraction_method, timestamps)
+### Data file
+All data lives in one JSON file (`documents.json`, created automatically) with four collections,
+written atomically after every change:
+- `documents` (id, title, content, text_content, word_count, template_id, timestamps)
+- `templates` (id, template_name, original_filename, document_type, extraction_method, page geometry, timestamps)
 - `template_fields` (id, template_id, heading, field_type `field|section|paragraph`, field_order,
-  parent_field_id, is_custom, timestamps)
-- `documents.template_id` (new nullable column) links completed documents to their template.
-  Completed documents store their full content, so editing or deleting a template never changes
-  documents that were already saved.
+  parent_field_id, is_custom, table_id, align, page, pos_y, timestamps)
+- `template_images` (placement, mime, base64 `data`)
+
+`documents.template_id` links completed documents to their template.
+Completed documents store their full content, so editing or deleting a template never changes
+documents that were already saved.

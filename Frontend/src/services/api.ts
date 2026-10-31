@@ -11,7 +11,7 @@ import {
   EligibleModelsResponse,
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = '';
 
 /** URL of a picture extracted from a template (logos, banners...) */
 export function templateImageUrl(templateId: string, imageId: string): string {
